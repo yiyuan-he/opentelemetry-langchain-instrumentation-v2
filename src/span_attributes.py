@@ -1,0 +1,1 @@
+# file for attribute constants (span attributes)
