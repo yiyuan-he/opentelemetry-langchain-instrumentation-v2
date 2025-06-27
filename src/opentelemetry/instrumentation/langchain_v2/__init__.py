@@ -1,7 +1,4 @@
 from opentelemetry.instrumentation.instrumentor import BaseInstrumentor
-import logging
-from typing import Collection
-from opentelemetry.instrumentation.langchain.config import Config
 from wrapt import wrap_function_wrapper
 
 from opentelemetry.trace import get_tracer
@@ -10,19 +7,8 @@ from opentelemetry.instrumentation.instrumentor import BaseInstrumentor
 from opentelemetry.instrumentation.utils import unwrap
 
 from opentelemetry.instrumentation.langchain.version import __version__
-from opentelemetry.instrumentation.langchain.utils import is_package_available
 
-
-from opentelemetry.trace.propagation.tracecontext import (
-    TraceContextTextMapPropagator,
-)
-from opentelemetry.trace.propagation import set_span_in_context
-
-from opentelemetry.instrumentation.langchain.callback_handler import (
-    TraceloopCallbackHandler,
-)
-
-from .callback_handler import OpenTelemetryCallbackHandler
+from opentelemetry.instrumentation.langchain_v2.callback_handler import OpenTelemetryCallbackHandler
 
 
 __all__ = ["OpenTelemetryCallbackHandler"]
