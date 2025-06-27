@@ -27,15 +27,11 @@ class SpanHolder:
     request_model: Optional[str] = None
     
     
-    
-    
-    # for callback handler methods: https://python.langchain.com/api_reference/langchain/callbacks/langchain.callbacks.streaming_aiter.AsyncIteratorCallbackHandler.html#langchain.callbacks.streaming_aiter.AsyncIteratorCallbackHandler
-    
 class OpenTelemetryCallbackHandler(BaseCallbackHandler):
     def __init__(self, tracer):
         super().__init__()
         self.tracer = tracer
-        self.spans: dict[UUID, SpanHolder] = {}
+        self.span_mapping: dict[UUID, SpanHolder] = {}
         
     
     def on_chat_model_start(self, serialized, messages, run_id, parent_run_id, **kwargs):
