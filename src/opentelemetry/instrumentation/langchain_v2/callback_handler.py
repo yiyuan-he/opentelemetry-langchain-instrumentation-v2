@@ -35,7 +35,7 @@ from opentelemetry.trace.status import Status, StatusCode
 # )
 
 from opentelemetry.instrumentation.langchain_v2.span_attributes import Span_Attributes, GenAIOperationValues
-from src.opentelemetry.instrumentation.langchain_v2.utils import dont_throw, CallbackFilteredJSONEncoder
+from opentelemetry.instrumentation.langchain_v2.utils import dont_throw, CallbackFilteredJSONEncoder
 
 
 # below dataclass stolen from openLLMetry
@@ -613,7 +613,7 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
         
             # Record token usage metrics
             if prompt_tokens > 0:
-                self.token_histogram.record(
+                self.token_histogram.record( # potentially can remove token_histogram
                     prompt_tokens,
                     attributes={
                         Span_Attributes.GEN_AI_SYSTEM: "Langchain",
@@ -623,7 +623,7 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
                 )
 
             if completion_tokens > 0:
-                self.token_histogram.record(
+                self.token_histogram.record( # potentially can remove token_histogram
                     completion_tokens,
                     attributes={
                         Span_Attributes.GEN_AI_SYSTEM: "Langchain",
@@ -702,21 +702,97 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
                 ),
             )
 
-    
+    @dont_throw
     def on_chain_end(self, outputs, *, run_id, parent_run_id, **kwargs):   
-        pass
+        if context_api.get_value(_SUPPRESS_INSTRUMENTATION_KEY):
+            return
+
+        span_holder = self.span_mapping[run_id]
+        span = span_holder.span
+        should_trace = context_api.get_value("override_enable_content_tracing") or True
+        if should_trace:
+            _set_span_attribute(
+                span,
+                # SpanAttributes.TRACELOOP_ENTITY_OUTPUT,
+                "app.entity.output",
+                json.dumps(
+                    {"outputs": outputs, "kwargs": kwargs},
+                    cls=CallbackFilteredJSONEncoder,
+                ),
+            )
+
+        self._end_span(span, run_id)
+        if parent_run_id is None:
+            context_api.attach(
+                context_api.set_value(
+                    SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION_KEY, False # another instance of something we need to address
+                )
+            )
     
+    @dont_throw
     def on_chain_error(self, error, run_id, parent_run_id, tags, **kwargs):
-        pass
+        self._handle_error(error, run_id, parent_run_id, **kwargs)
+        
+    @dont_throw
+    def on_tool_start(self, serialized, input_str, *, run_id, parent_run_id, tags, metadata, inputs, **kwargs):
+        if context_api.get_value(_SUPPRESS_INSTRUMENTATION_KEY):
+            return
+
+        name = self._get_name_from_callback(serialized, kwargs=kwargs)
+        workflow_name = self.get_workflow_name(parent_run_id)
+        entity_path = self.get_entity_path(parent_run_id)
+
+        span = self._create_task_span(
+            run_id,
+            parent_run_id,
+            name,
+            # TraceloopSpanKindValues.TOOL,
+            SpanKind.INTERNAL,
+            workflow_name,
+            name,
+            entity_path,
+        )
+        # if should_send_prompts():
+        should_trace = context_api.get_value("override_enable_content_tracing") or True
+        if should_trace:
+            _set_span_attribute(
+                span,
+                SpanAttributes.TRACELOOP_ENTITY_INPUT,
+                json.dumps(
+                    {
+                        "input_str": input_str,
+                        "tags": tags,
+                        "metadata": metadata,
+                        "inputs": inputs,
+                        "kwargs": kwargs,
+                    },
+                    cls=CallbackFilteredJSONEncoder,
+                ),
+            )
     
-    def on_tool_start(self, serialized, input_str, run_id, parent_run_id, **kwargs):
-        pass
+    @dont_throw
+    def on_tool_end(self, output, *, run_id, parent_run_id, **kwargs):
+        if context_api.get_value(_SUPPRESS_INSTRUMENTATION_KEY):
+            return
+
+        span = self._get_span(run_id)
+        should_trace = context_api.get_value("override_enable_content_tracing") or True
+        if should_trace:
+            _set_span_attribute(
+                span,
+                # SpanAttributes.TRACELOOP_ENTITY_OUTPUT, # investigate this, do we even need it?
+                "app.entity.output",
+                json.dumps(
+                    {"output": output, "kwargs": kwargs},
+                    cls=CallbackFilteredJSONEncoder,
+                ),
+            )
+        self._end_span(span, run_id)
     
-    def on_tool_end(self, output, run_id, parent_run_id, **kwargs):
-        pass
-    
+    @dont_throw
     def on_tool_error(self, error, run_id, parent_run_id, **kwargs):
-        pass
+        self._handle_error(error, run_id, parent_run_id, **kwargs)
+    
     
     def on_agent_action(self, action, run_id, parent_run_idone, **kwargs):
         pass
@@ -724,8 +800,8 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
     def on_agent_finish(self, finish, run_id, parent_run_id, **kwargs):
         pass
 
-    def on_agent_error(self, error, run_id, parent_run_id, **kwargs):
-        pass
+    def on_agent_error(self, error, *, run_id, parent_run_id, **kwargs):
+        self._handle_error(error, run_id, parent_run_id, **kwargs)
     
     
     

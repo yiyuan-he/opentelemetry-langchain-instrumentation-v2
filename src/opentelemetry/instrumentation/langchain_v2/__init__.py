@@ -16,6 +16,10 @@ __all__ = ["OpenTelemetryCallbackHandler"]
 _instruments = ("langchain >= 0.1.0",)
 
 class LangChainInstrumentor(BaseInstrumentor):
+    @classmethod
+    def instrumentation_dependencies(cls) -> tuple:
+        return _instruments
+    
     def _instrument(self, **kwargs):
         tracer_provider = kwargs.get("tracer_provider")
         tracer = get_tracer(__name__, __version__, tracer_provider)
