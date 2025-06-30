@@ -267,21 +267,6 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
     
     @dont_throw
     def on_llm_start(self, serialized, prompts, run_id, parent_run_id, **kwargs):
-        # if parent_run_id and parent_run_id in self.span_mapping:
-        #     parent_span = self.span_mapping[parent_run_id].span
-            
-        #     with self.tracer.start_as_current_span() as span:
-        #     # span = self.tracer.start_as_current_span(name, context=set_span_in_context(parent_span))
-        #         pass
-        # else:
-        #     with self.tracer.start_as_current_span() as span:
-        #         self.span_mapping[run_id] = SpanInfo(span=span, prompts=prompts)
-        #         span.set_attribute("run_id", run_id)
-        #         if parent_run_id:
-        #             span.set_attribute("parent_run_id", parent_run_id)
-        #         # Additional span setup as needed
-        #         self._set_span_attributes(span, serialized)
-        
         if context_api.get_value(_SUPPRESS_INSTRUMENTATION_KEY):
             return
 
