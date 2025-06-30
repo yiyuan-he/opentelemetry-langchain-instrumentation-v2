@@ -30,9 +30,9 @@ class Span_Attributes:
     GEN_AI_USAGE_OUTPUT_TOKENS = "gen_ai.usage.output_tokens"
     GEN_AI_SERVER_ADDR = "server.address"
     GEN_AI_TOOL_CALL_ID= "gen_ai.tool.call.id"
-    
-    
-    
+    GEN_AI_TOOL_NAME = "gen_ai.tool.name"
+    GEN_AI_TOOL_DESCRIPTION = "gen_ai.tool.description"
+    GEN_AI_TOOL_TYPE = "gen_ai.tool.type"
     
 # stability label for below is "developement"
 class GenAIOperationValues(Enum):
