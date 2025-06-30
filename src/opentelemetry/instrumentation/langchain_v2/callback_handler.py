@@ -22,6 +22,8 @@ from opentelemetry.semconv_ai import (
     TraceloopSpanKindValues,
 )
 
+from opentelemetry.trace.status import Status, StatusCode
+
 # from opentelemetry.semconv._incubating.attributes.gen_ai_attributes import (
 #     GEN_AI_RESPONSE_ID,
 # )
@@ -423,11 +425,7 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
                 )
             else:
                 span = self.tracer.start_span(span_name, kind=kind)
-
-            # ////////// below 2 are not OTel
-            # _set_span_attribute(span, SpanAttributes.TRACELOOP_WORKFLOW_NAME, workflow_name)
-            # _set_span_attribute(span, SpanAttributes.TRACELOOP_ENTITY_PATH, entity_path)
-
+                
             # ////////// not OTel, cant find usage so potentially remove later
             token = context_api.attach(
                 context_api.set_value(SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION_KEY, True)
@@ -442,6 +440,41 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
 
             return span
 
+    def _create_task_span(
+        self,
+        run_id: UUID,
+        parent_run_id: Optional[UUID],
+        name: str,
+        # kind: TraceloopSpanKindValues,
+        kind: SpanKind,
+        workflow_name: str,
+        entity_name: str = "",
+        entity_path: str = "",
+        metadata: Optional[dict[str, Any]] = None,
+    ) -> Span:
+        span_name = f"{name}.{kind.value}"
+        span = self._create_span(
+            run_id,
+            parent_run_id,
+            span_name,
+            workflow_name=workflow_name,
+            entity_name=entity_name,
+            entity_path=entity_path,
+            metadata=metadata,
+        )
+
+        # _set_span_attribute(span, SpanAttributes.TRACELOOP_SPAN_KIND, kind.value)
+        # _set_span_attribute(span, SpanAttributes.TRACELOOP_ENTITY_NAME, entity_name)
+        
+         # Replace Traceloop attributes with standard semantic conventions
+        _set_span_attribute(span, "app.workflow.name", workflow_name)
+        _set_span_attribute(span, "app.entity.name", entity_name)
+        
+        # Add span kind as an attribute (since we're using the SpanKind enum)
+        if kind == SpanKind.INTERNAL:
+            _set_span_attribute(span, "app.component.type", "workflow" if parent_run_id is None else "task")
+
+        return span
         
         
     def _create_llm_span(
@@ -489,6 +522,23 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
 
         return "unknown"
     
+    def _handle_error(
+        self,
+        error: BaseException,
+        run_id: UUID,
+        parent_run_id: Optional[UUID] = None,
+        **kwargs: Any,
+    ) -> None:
+        """Common error handling logic for all components."""
+        if context_api.get_value(_SUPPRESS_INSTRUMENTATION_KEY):
+            return
+
+        span = self._get_span(run_id)
+        span.set_status(Status(StatusCode.ERROR))
+        span.record_exception(error)
+        self._end_span(span, run_id)
+
+    
     @dont_throw
     def on_chat_model_start(self, serialized, messages, *, run_id, tags, parent_run_id, metadata, **kwargs):
         if context_api.get_value(_SUPPRESS_INSTRUMENTATION_KEY):
@@ -514,10 +564,7 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
         _set_llm_request(span, serialized, prompts, kwargs, self.span_mapping[run_id])
 
         
-                
-    # def on_llm_new_token(self, token, **kwargs):
-    #     pass
-    
+    @dont_throw
     def on_llm_end(self, response, *, run_id, parent_run_id, **kwargs):
         if context_api.get_value(_SUPPRESS_INSTRUMENTATION_KEY):
             return
@@ -589,22 +636,74 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
         self._end_span(span, run_id)
 
         # Record duration
-        duration = time.time() - self.spans[run_id].start_time
+        duration = time.time() - self.span_mapping[run_id].start_time
         self.duration_histogram.record(
             duration,
             attributes={
-                SpanAttributes.LLM_SYSTEM: "Langchain",
-                SpanAttributes.LLM_RESPONSE_MODEL: model_name or "unknown",
+                Span_Attributes.GEN_AI_SYSTEM: "Langchain",
+                Span_Attributes.GEN_AI_RESPONSE_MODEL: model_name or "unknown",
             },
         )
     
-    def on_llm_error(self, error, run_id, parent_run_id, **kwargs):
-        pass
+    @dont_throw
+    def on_llm_error(self, error, *, run_id, parent_run_id, **kwargs):
+        self._handle_error(error, run_id, parent_run_id, **kwargs)
 
-    def on_chain_start(self, serialized, inputs, run_id, parent_run_id, **kwargs):
-        pass 
+    @dont_throw
+    def on_chain_start(self, serialized, inputs, *, run_id, parent_run_id, tags, metadata, **kwargs):
+        if context_api.get_value(_SUPPRESS_INSTRUMENTATION_KEY):
+            return
+
+        workflow_name = ""
+        entity_path = ""
+
+        name = self._get_name_from_callback(serialized, **kwargs)
+        # kind = (
+        #     TraceloopSpanKindValues.WORKFLOW
+        #     if parent_run_id is None or parent_run_id not in self.spans
+        #     else TraceloopSpanKindValues.TASK
+        # )
+        
+        is_top_level = parent_run_id is None or parent_run_id not in self.span_mapping
+        
+        
+        kind = SpanKind.INTERNAL
+
+        if is_top_level:
+            workflow_name = name
+        else:
+            workflow_name = self.get_workflow_name(parent_run_id)
+            entity_path = self.get_entity_path(parent_run_id)
+
+        span = self._create_task_span(
+            run_id,
+            parent_run_id,
+            name,
+            kind,
+            workflow_name,
+            name,
+            entity_path,
+            metadata,
+        )
+        should_trace = context_api.get_value("override_enable_content_tracing") or True
+        if should_trace:
+            _set_span_attribute(
+                span,
+                # SpanAttributes.TRACELOOP_ENTITY_INPUT,
+                "app.entity.input", # gpt generated alternative naming scheme
+                json.dumps(
+                    {
+                        "inputs": inputs,
+                        "tags": tags,
+                        "metadata": metadata,
+                        "kwargs": kwargs,
+                    },
+                    cls=CallbackFilteredJSONEncoder,
+                ),
+            )
+
     
-    def on_chain_end(self, outputs, run_id, parent_run_id, **kwargs):   
+    def on_chain_end(self, outputs, *, run_id, parent_run_id, **kwargs):   
         pass
     
     def on_chain_error(self, error, run_id, parent_run_id, tags, **kwargs):
