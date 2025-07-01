@@ -27,12 +27,9 @@ from src.opentelemetry.instrumentation.langchain_v2.utils import dont_throw
 @dataclass
 class SpanHolder:
     span: Span
-    token: Any # potentially can remove token *high
     context: Context
     children: list[UUID]
-    workflow_name: str # potentially can remove *high
     entity_name: str 
-    entity_path: str # potentially can remove *low
     start_time: float = field(default_factory=time.time)
     request_model: Optional[str] = None
     
@@ -131,9 +128,7 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
             parent_run_id: Optional[UUID],
             span_name: str,
             kind: SpanKind = SpanKind.INTERNAL,
-            workflow_name: str = "",
             entity_name: str = "",
-            entity_path: str = "",
             metadata: Optional[dict[str, Any]] = None,
         ) -> Span:
             if metadata is not None:
@@ -161,13 +156,9 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
             else:
                 span = self.tracer.start_span(span_name, kind=kind)
 
-            # ////////// not OTel, cant find usage so potentially remove later
-            token = context_api.attach(
-                context_api.set_value(SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION_KEY, True)
-            )
 
             self.span_mapping[run_id] = SpanHolder(
-                span, token, None, [], workflow_name, entity_name, entity_path
+                span, None, [], entity_name
             )
 
             if parent_run_id is not None and parent_run_id in self.span_mapping:
@@ -185,16 +176,11 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
         operation_name: GenAIOperationValues,
         metadata: Optional[dict[str, Any]] = None,
     ) -> Span:
-        workflow_name = self.get_workflow_name(parent_run_id) 
-        entity_path = self.get_entity_path(parent_run_id) 
-
         span = self._create_span(
             run_id,
             parent_run_id,
             f"{name}.{operation_name.value}",
             kind=SpanKind.CLIENT,
-            workflow_name=workflow_name,
-            entity_path=entity_path,
             metadata=metadata,
         )
         _set_span_attribute(span, Span_Attributes.GEN_AI_SYSTEM, "Langchain")
@@ -279,27 +265,3 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
         if parent_run_id is None:
             return None
         return self.span_mapping[parent_run_id]
-
-
-    def get_workflow_name(self, parent_run_id: str):
-        parent_span = self.get_parent_span(parent_run_id)
-
-        if parent_span is None:
-            return ""
-
-        return parent_span.workflow_name
-        
-    def get_entity_path(self, parent_run_id: str):
-        parent_span = self.get_parent_span(parent_run_id)
-
-        if parent_span is None:
-            return ""
-        elif (
-            parent_span.entity_path == ""
-            and parent_span.entity_name == parent_span.workflow_name
-        ):
-            return ""
-        elif parent_span.entity_path == "":
-            return f"{parent_span.entity_name}"
-        else:
-            return f"{parent_span.entity_path}.{parent_span.entity_name}"
