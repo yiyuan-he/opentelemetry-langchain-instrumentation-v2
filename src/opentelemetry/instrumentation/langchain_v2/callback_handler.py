@@ -1,13 +1,13 @@
 import json
 import time
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Optional
 from langchain_core.callbacks import (
     BaseCallbackHandler,
 )
 
 from opentelemetry.context.context import Context
-from opentelemetry.trace import SpanKind, set_span_in_context, Tracer
+from opentelemetry.trace import SpanKind, set_span_in_context
 from opentelemetry.trace.span import Span
 from opentelemetry.util.types import AttributeValue
 from uuid import UUID
@@ -15,10 +15,7 @@ from uuid import UUID
 from opentelemetry import context as context_api
 from opentelemetry.instrumentation.utils import _SUPPRESS_INSTRUMENTATION_KEY
 from opentelemetry.semconv_ai import (
-    SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION_KEY,
-    LLMRequestTypeValues,
-    SpanAttributes,
-    TraceloopSpanKindValues,
+    SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION_KEY
 )
 
 
@@ -30,12 +27,12 @@ from src.opentelemetry.instrumentation.langchain_v2.utils import dont_throw
 @dataclass
 class SpanHolder:
     span: Span
-    token: Any # potentially can remove token
+    token: Any # potentially can remove token *high
     context: Context
     children: list[UUID]
-    workflow_name: str
-    entity_name: str
-    entity_path: str
+    workflow_name: str # potentially can remove *high
+    entity_name: str 
+    entity_path: str # potentially can remove *low
     start_time: float = field(default_factory=time.time)
     request_model: Optional[str] = None
     
@@ -78,9 +75,7 @@ def _set_request_params(span, kwargs, span_holder: SpanHolder):
 
     tools = kwargs.get("invocation_params", {}).get("tools", [])
     for i, tool in enumerate(tools):
-        tool_function = tool.get("function", tool)     
-        # ///////////////////////// what are we doing about this indexing?
-        # ///////////////////////// Current implementation: gen_ai.tool.name.index
+        tool_function = tool.get("function", tool)
         _set_span_attribute(
             span,
             f"{Span_Attributes.GEN_AI_TOOL_NAME}.{i}",
@@ -93,8 +88,6 @@ def _set_request_params(span, kwargs, span_holder: SpanHolder):
             tool_function.get("description"),
         )
         
-        ########## replaced SpanAttributes.LLM_REQUEST_FUNCTIONS.{i}.parameters with this
-        ########## Not a 1 to 1 replacement
         _set_span_attribute(
             span,
             f"{Span_Attributes.GEN_AI_TOOL_TYPE}.{i}",
@@ -105,34 +98,6 @@ def _set_request_params(span, kwargs, span_holder: SpanHolder):
 def _set_span_attribute(span: Span, name: str, value: AttributeValue):
     if value is not None and value != "":
         span.set_attribute(name, value)
-
-
-def _set_llm_request(
-    span: Span,
-    serialized: dict[str, Any],
-    prompts: list[str],
-    kwargs: Any,
-    span_holder: SpanHolder,
-) -> None:
-    _set_request_params(span, kwargs, span_holder)
-
-    should_trace = context_api.get_value("override_enable_content_tracing") or True
-    if should_trace:
-        for i, msg in enumerate(prompts):
-            
-            #  /////// Below span attributes are labeled as "DEPRECATED": Deprecated, use Event API to report prompt contents.
-            
-            # _set_span_attribute(
-            #     span,
-            #     f"{SpanAttributes.LLM_PROMPTS}.{i}.role",
-            #     "user",
-            # )
-            # _set_span_attribute(
-            #     span,
-            #     f"{SpanAttributes.LLM_PROMPTS}.{i}.content",
-            #     msg,
-            # )
-            pass
         
 def _sanitize_metadata_value(value: Any) -> Any:
     """Convert metadata values to OpenTelemetry-compatible types."""
@@ -195,10 +160,6 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
                 )
             else:
                 span = self.tracer.start_span(span_name, kind=kind)
-
-            # ////////// below 2 are not OTel
-            # _set_span_attribute(span, SpanAttributes.TRACELOOP_WORKFLOW_NAME, workflow_name)
-            # _set_span_attribute(span, SpanAttributes.TRACELOOP_ENTITY_PATH, entity_path)
 
             # ////////// not OTel, cant find usage so potentially remove later
             token = context_api.attach(
@@ -275,14 +236,9 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
             run_id, parent_run_id, name, GenAIOperationValues.TEXT_COMPLETION
         )
         
-        _set_llm_request(span, serialized, prompts, kwargs, self.span_mapping[run_id])
+        _set_request_params(span, kwargs, self.span_mapping[run_id])
 
         
-        
-                
-    # def on_llm_new_token(self, token, **kwargs):
-    #     pass
-    
     def on_llm_end(self, response, run_id, parent_run_id, **kwargs):
         pass
     
