@@ -44,8 +44,9 @@ def _set_request_params(span, kwargs, span_holder: SpanHolder):
     else:
         model = "unknown"
     
-    if span_holder.request_model != None:
-        model = span_holder.request_model
+    if span_holder.request_model is None:
+        model = None
+
     print(f"curr span holder: {span_holder}")
     print(f"MODEL RIGHT HERE: {model}")
 
@@ -99,48 +100,6 @@ def _set_span_attribute(span: Span, name: str, value: AttributeValue):
         span.set_attribute(name, value)
 
         
-def _set_chat_response(span: Span, response: LLMResult) -> None:
-    input_tokens = 0
-    output_tokens = 0
-    total_tokens = 0
-    cache_read_tokens = 0
-
-    for generations in response.generations:
-        for generation in generations:
-            if (
-                hasattr(generation, "message")
-                and hasattr(generation.message, "usage_metadata")
-                and generation.message.usage_metadata is not None
-            ):
-                input_tokens += (
-                    generation.message.usage_metadata.get("input_tokens")
-                    or generation.message.usage_metadata.get("prompt_tokens")
-                    or 0
-                )
-                output_tokens += (
-                    generation.message.usage_metadata.get("output_tokens")
-                    or generation.message.usage_metadata.get("completion_tokens")
-                    or 0
-                )
-                total_tokens = input_tokens + output_tokens
-
-                if generation.message.usage_metadata.get("input_token_details"):
-                    input_token_details = generation.message.usage_metadata.get("input_token_details", {})
-                    cache_read_tokens += input_token_details.get("cache_read", 0)
-
-
-    if input_tokens > 0 or output_tokens > 0 or total_tokens > 0 or cache_read_tokens > 0:
-        _set_span_attribute(
-            span,
-            Span_Attributes.GEN_AI_USAGE_INPUT_TOKENS,
-            input_tokens,
-        )
-        _set_span_attribute(
-            span,
-            Span_Attributes.GEN_AI_USAGE_OUTPUT_TOKENS,
-            output_tokens,
-        )
-        
 def _sanitize_metadata_value(value: Any) -> Any:
     """Convert metadata values to OpenTelemetry-compatible types."""
     if value is None:
@@ -150,7 +109,6 @@ def _sanitize_metadata_value(value: Any) -> Any:
     if isinstance(value, (list, tuple)):
         return [str(_sanitize_metadata_value(v)) for v in value]
     return str(value)
-
 
 
 def _set_chat_request(
@@ -243,10 +201,6 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
         kind: SpanKind,
         metadata: Optional[dict[str, Any]] = None,
     ) -> Span:
-        # operation_type = kind.value if kind else "INTERNAL"
-        # span_name = f"{operation_type} {name}"
-    
-        # span_name = f"{name}.{kind.value}"
         span_name = f"{name}.{kind}"
         span = self._create_span(
             run_id,
@@ -268,7 +222,6 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
         span = self._create_span(
             run_id,
             parent_run_id,
-            # f"{name}.{operation_name.value}",
             f"{operation_name.value} {name}",
             kind=SpanKind.CLIENT,
             metadata=metadata,
@@ -382,16 +335,13 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
                 or token_usage.get("output_tokens")
             )
             
-            # _set_span_attribute(
-            #     span, Span_Attributes.GEN_AI_USAGE_INPUT_TOKENS, prompt_tokens
-            # )
+            _set_span_attribute(
+                span, Span_Attributes.GEN_AI_USAGE_INPUT_TOKENS, prompt_tokens
+            )
         
-            # _set_span_attribute(
-            #     span, Span_Attributes.GEN_AI_USAGE_OUTPUT_TOKENS, completion_tokens
-            # )
-        # span.update_name(f"{model_name}") if model_name else span.update_name(span.name)
-        _set_chat_response(span, response)
-        # self._end_span(span, run_id)
+            _set_span_attribute(
+                span, Span_Attributes.GEN_AI_USAGE_OUTPUT_TOKENS, completion_tokens
+            )
 
     @dont_throw
     def on_llm_error(self, error, *, run_id, parent_run_id, **kwargs):
@@ -446,7 +396,6 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
                 ),
             )
         
-        # self._end_span(span, run_id)
         _set_request_params(span, kwargs, self.span_mapping[run_id])
         self._end_span(span, run_id)
 
