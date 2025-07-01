@@ -1,38 +1,21 @@
 import json
 import time
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Optional
 from langchain_core.callbacks import (
     BaseCallbackHandler,
 )
 from langchain_core.messages import BaseMessage
 from langchain_core.outputs import LLMResult
 from opentelemetry.context.context import Context
-from opentelemetry.trace import SpanKind, set_span_in_context, Tracer
+from opentelemetry.trace import SpanKind, set_span_in_context
 from opentelemetry.trace.span import Span
 from opentelemetry.util.types import AttributeValue
 from uuid import UUID
 
 from opentelemetry import context as context_api
 from opentelemetry.instrumentation.utils import _SUPPRESS_INSTRUMENTATION_KEY
-from opentelemetry.semconv_ai import (
-    SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION_KEY,
-    LLMRequestTypeValues,
-    SpanAttributes,
-    TraceloopSpanKindValues,
-)
 
-from opentelemetry.trace.status import Status, StatusCode
-
-# from opentelemetry.semconv._incubating.attributes.gen_ai_attributes import (
-#     GEN_AI_RESPONSE_ID,
-# )
-
-# from opentelemetry.instrumentation.langchain.utils import (
-#     CallbackFilteredJSONEncoder,
-#     dont_throw,
-#     should_send_prompts,
-# )
 
 from opentelemetry.instrumentation.langchain_v2.span_attributes import Span_Attributes, GenAIOperationValues
 from opentelemetry.instrumentation.langchain_v2.utils import dont_throw, CallbackFilteredJSONEncoder
@@ -42,12 +25,12 @@ from opentelemetry.instrumentation.langchain_v2.utils import dont_throw, Callbac
 @dataclass
 class SpanHolder:
     span: Span
-    token: Any # potentially can remove token
+    token: Any # potentially can remove token *high
     context: Context
     children: list[UUID]
-    workflow_name: str
-    entity_name: str
-    entity_path: str
+    workflow_name: str # potentially can remove *high
+    entity_name: str 
+    entity_path: str # potentially can remove *low
     start_time: float = field(default_factory=time.time)
     request_model: Optional[str] = None
     
@@ -101,9 +84,7 @@ def _set_request_params(span, kwargs, span_holder: SpanHolder):
 
     tools = kwargs.get("invocation_params", {}).get("tools", [])
     for i, tool in enumerate(tools):
-        tool_function = tool.get("function", tool)     
-        # ///////////////////////// what are we doing about this indexing?
-        # ///////////////////////// Current implementation: gen_ai.tool.name.index
+        tool_function = tool.get("function", tool)
         _set_span_attribute(
             span,
             f"{Span_Attributes.GEN_AI_TOOL_NAME}.{i}",
@@ -116,8 +97,6 @@ def _set_request_params(span, kwargs, span_holder: SpanHolder):
             tool_function.get("description"),
         )
         
-        ########## replaced SpanAttributes.LLM_REQUEST_FUNCTIONS.{i}.parameters with this
-        ########## Not a 1 to 1 replacement
         _set_span_attribute(
             span,
             f"{Span_Attributes.GEN_AI_TOOL_TYPE}.{i}",
@@ -156,150 +135,6 @@ def _set_llm_request(
             #     msg,
             # )
             pass
-        
-def _set_chat_response(span: Span, response: LLMResult) -> None:
-    input_tokens = 0
-    output_tokens = 0
-    total_tokens = 0
-    cache_read_tokens = 0
-
-    i = 0
-    for generations in response.generations:
-        for generation in generations:
-            if (
-                hasattr(generation, "message")
-                and hasattr(generation.message, "usage_metadata")
-                and generation.message.usage_metadata is not None
-            ):
-                input_tokens += (
-                    generation.message.usage_metadata.get("input_tokens")
-                    or generation.message.usage_metadata.get("prompt_tokens")
-                    or 0
-                )
-                output_tokens += (
-                    generation.message.usage_metadata.get("output_tokens")
-                    or generation.message.usage_metadata.get("completion_tokens")
-                    or 0
-                )
-                total_tokens = input_tokens + output_tokens
-
-                if generation.message.usage_metadata.get("input_token_details"):
-                    input_token_details = generation.message.usage_metadata.get("input_token_details", {})
-                    cache_read_tokens += input_token_details.get("cache_read", 0)
-
-            should_trace = context_api.get_value("override_enable_content_tracing") or True
-            if should_trace:
-                pass # !!!!!!!!entirety of this block is deprecated with no replacement
-        #         prefix = f"{SpanAttributes.LLM_COMPLETIONS}.{i}"
-        #         if hasattr(generation, "text") and generation.text != "":
-        #             _set_span_attribute(
-        #                 span,
-        #                 f"{prefix}.content",
-        #                 generation.text,
-        #             )
-        #             _set_span_attribute(span, f"{prefix}.role", "assistant")
-        #         else:
-        #             _set_span_attribute(
-        #                 span,
-        #                 f"{prefix}.role",
-        #                 _message_type_to_role(generation.type),
-        #             )
-        #             if generation.message.content is str:
-        #                 _set_span_attribute(
-        #                     span,
-        #                     f"{prefix}.content",
-        #                     generation.message.content,
-        #                 )
-        #             else:
-        #                 _set_span_attribute(
-        #                     span,
-        #                     f"{prefix}.content",
-        #                     json.dumps(
-        #                         generation.message.content, cls=CallbackFilteredJSONEncoder
-        #                     ),
-        #                 )
-        #             if generation.generation_info.get("finish_reason"):
-        #                 _set_span_attribute(
-        #                     span,
-        #                     f"{prefix}.finish_reason",
-        #                     generation.generation_info.get("finish_reason"),
-        #                 )
-
-        #             if generation.message.additional_kwargs.get("function_call"):
-        #                 _set_span_attribute(
-        #                     span,
-        #                     f"{prefix}.tool_calls.0.name",
-        #                     generation.message.additional_kwargs.get("function_call").get(
-        #                         "name"
-        #                     ),
-        #                 )
-        #                 _set_span_attribute(
-        #                     span,
-        #                     f"{prefix}.tool_calls.0.arguments",
-        #                     generation.message.additional_kwargs.get("function_call").get(
-        #                         "arguments"
-        #                     ),
-        #                 )
-
-        #         if hasattr(generation, "message"):
-        #             tool_calls = (
-        #                 generation.message.tool_calls
-        #                 if hasattr(generation.message, "tool_calls")
-        #                 else generation.message.additional_kwargs.get("tool_calls")
-        #             )
-        #             if tool_calls and isinstance(tool_calls, list):
-        #                 _set_span_attribute(
-        #                     span,
-        #                     f"{prefix}.role",
-        #                     "assistant",
-        #                 )
-        #                 _set_chat_tool_calls(span, prefix, tool_calls)
-        # i += 1
-
-    if input_tokens > 0 or output_tokens > 0 or total_tokens > 0 or cache_read_tokens > 0:
-        _set_span_attribute(
-            span,
-            Span_Attributes.GEN_AI_USAGE_INPUT_TOKENS,
-            input_tokens,
-        )
-        _set_span_attribute(
-            span,
-            Span_Attributes.GEN_AI_USAGE_OUTPUT_TOKENS,
-            output_tokens,
-        )
-        
-        # _set_span_attribute(
-        #     span,
-        #     SpanAttributes.LLM_USAGE_CACHE_READ_INPUT_TOKENS,
-        #     cache_read_tokens,
-        # ) 
-        # /////////# can't find this one in the docs so I don't think it exists
-
-        
-        
-def _set_chat_tool_calls(span: Span, prefix: str, tool_calls: list[dict[str, Any]]) -> None:
-    for idx, tool_call in enumerate(tool_calls):
-        tool_call_prefix = f"{prefix}.tool_calls.{idx}"
-        tool_call_dict = dict(tool_call)
-        tool_id = tool_call_dict.get("id")
-        tool_name = tool_call_dict.get("name", tool_call_dict.get("function", {}).get("name"))
-        tool_args = tool_call_dict.get("args", tool_call_dict.get("function", {}).get("arguments"))
-
-        _set_span_attribute(
-            span,
-            f"{tool_call_prefix}.id", tool_id
-        )
-        _set_span_attribute(
-            span,
-            f"{tool_call_prefix}.name",
-            tool_name,
-        )
-        _set_span_attribute(
-            span,
-            f"{tool_call_prefix}.arguments",
-            json.dumps(tool_args, cls=CallbackFilteredJSONEncoder),
-        )
-
         
 def _sanitize_metadata_value(value: Any) -> Any:
     """Convert metadata values to OpenTelemetry-compatible types."""
@@ -425,7 +260,7 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
                 )
             else:
                 span = self.tracer.start_span(span_name, kind=kind)
-                
+
             # ////////// not OTel, cant find usage so potentially remove later
             token = context_api.attach(
                 context_api.set_value(SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION_KEY, True)

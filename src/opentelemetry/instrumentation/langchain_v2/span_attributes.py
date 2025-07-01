@@ -35,10 +35,10 @@ class Span_Attributes:
     GEN_AI_TOOL_TYPE = "gen_ai.tool.type"
     GEN_AI_TOKEN_TYPE = "gen_ai.token.type"
     
-# stability label for below is "developement"
+# stability label for below is "development"
 class GenAIOperationValues(Enum):
     CHAT = "chat"
-    CREATE_AGENT = "creat_agent"
+    CREATE_AGENT = "create_agent"
     EMBEDDINGS = "embeddings"
     GENERATE_CONTENT = "generate_content"
     INVOKE_AGENT = "invoke_agent"
