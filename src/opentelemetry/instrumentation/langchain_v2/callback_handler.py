@@ -5,6 +5,7 @@ from typing import Any, Optional
 from langchain_core.callbacks import (
     BaseCallbackHandler,
 )
+
 from langchain_core.messages import BaseMessage
 from langchain_core.outputs import LLMResult
 from opentelemetry.context.context import Context
@@ -19,7 +20,7 @@ from opentelemetry.instrumentation.utils import _SUPPRESS_INSTRUMENTATION_KEY
 
 from opentelemetry.instrumentation.langchain_v2.span_attributes import Span_Attributes, GenAIOperationValues
 from opentelemetry.instrumentation.langchain_v2.utils import dont_throw, CallbackFilteredJSONEncoder
-
+from opentelemetry.trace.status import Status, StatusCode
 
 # below dataclass stolen from openLLMetry
 @dataclass
@@ -27,21 +28,8 @@ class SpanHolder:
     span: Span
     context: Context
     children: list[UUID]
-    entity_name: str 
     start_time: float = field(default_factory=time.time)
     request_model: Optional[str] = None
-    
-def _message_type_to_role(message_type: str) -> str:
-    if message_type == "human":
-        return "user"
-    elif message_type == "system":
-        return "system"
-    elif message_type == "ai":
-        return "assistant"
-    elif message_type == "tool":
-        return "tool"
-    else:
-        return "unknown"
     
 def _set_request_params(span, kwargs, span_holder: SpanHolder):
     for model_tag in ("model", "model_id", "model_name"):
@@ -114,24 +102,48 @@ def _set_llm_request(
     span_holder: SpanHolder,
 ) -> None:
     _set_request_params(span, kwargs, span_holder)
+        
+def _set_chat_response(span: Span, response: LLMResult) -> None:
+    input_tokens = 0
+    output_tokens = 0
+    total_tokens = 0
+    cache_read_tokens = 0
 
-    should_trace = context_api.get_value("override_enable_content_tracing") or True
-    if should_trace:
-        for i, msg in enumerate(prompts):
-            
-            #  /////// Below span attributes are labeled as "DEPRECATED": Deprecated, use Event API to report prompt contents.
-            
-            # _set_span_attribute(
-            #     span,
-            #     f"{SpanAttributes.LLM_PROMPTS}.{i}.role",
-            #     "user",
-            # )
-            # _set_span_attribute(
-            #     span,
-            #     f"{SpanAttributes.LLM_PROMPTS}.{i}.content",
-            #     msg,
-            # )
-            pass
+    for generations in response.generations:
+        for generation in generations:
+            if (
+                hasattr(generation, "message")
+                and hasattr(generation.message, "usage_metadata")
+                and generation.message.usage_metadata is not None
+            ):
+                input_tokens += (
+                    generation.message.usage_metadata.get("input_tokens")
+                    or generation.message.usage_metadata.get("prompt_tokens")
+                    or 0
+                )
+                output_tokens += (
+                    generation.message.usage_metadata.get("output_tokens")
+                    or generation.message.usage_metadata.get("completion_tokens")
+                    or 0
+                )
+                total_tokens = input_tokens + output_tokens
+
+                if generation.message.usage_metadata.get("input_token_details"):
+                    input_token_details = generation.message.usage_metadata.get("input_token_details", {})
+                    cache_read_tokens += input_token_details.get("cache_read", 0)
+
+
+    if input_tokens > 0 or output_tokens > 0 or total_tokens > 0 or cache_read_tokens > 0:
+        _set_span_attribute(
+            span,
+            Span_Attributes.GEN_AI_USAGE_INPUT_TOKENS,
+            input_tokens,
+        )
+        _set_span_attribute(
+            span,
+            Span_Attributes.GEN_AI_USAGE_OUTPUT_TOKENS,
+            output_tokens,
+        )
         
 def _sanitize_metadata_value(value: Any) -> Any:
     """Convert metadata values to OpenTelemetry-compatible types."""
@@ -163,48 +175,6 @@ def _set_chat_request(
             _set_span_attribute(span, f"{Span_Attributes.GEN_AI_TOOL_NAME}.{i}", function.get("name"))
             _set_span_attribute(span, f"{Span_Attributes.GEN_AI_TOOL_DESCRIPTION}.{i}", function.get("description"))
             _set_span_attribute(span, f"{Span_Attributes.GEN_AI_TOOL_TYPE}.{i}", json.dumps(function.get("parameters")))
-            
-        i = 0
-        for message in messages:
-            for msg in message:
-                # _set_span_attribute(
-                #     span,
-                #     f"{SpanAttributes.LLM_PROMPTS}.{i}.role",
-                #     _message_type_to_role(msg.type),
-                # ) # !!!!!!!deprecated
-                
-                tool_calls = (
-                    msg.tool_calls
-                    if hasattr(msg, "tool_calls")
-                    else msg.additional_kwargs.get("tool_calls")
-                )
-
-                if tool_calls:
-                #     _set_chat_tool_calls(span, f"{SpanAttributes.LLM_PROMPTS}.{i}", tool_calls)
-                # !!!!!!!!deprecated
-                    pass 
-                
-                else:
-                    content = (
-                        msg.content
-                        if isinstance(msg.content, str)
-                        else json.dumps(msg.content, cls=CallbackFilteredJSONEncoder)
-                    )
-                    # _set_span_attribute(
-                    #     span,
-                    #     f"{SpanAttributes.LLM_PROMPTS}.{i}.content",
-                    #     content,
-                    # ) #!!!!!!!deprecated
-
-                # if msg.type == "tool" and hasattr(msg, "tool_call_id"):
-                #     _set_span_attribute(
-                #         span,
-                #         f"{SpanAttributes.LLM_PROMPTS}.{i}.tool_call_id",
-                #         msg.tool_call_id,
-                #     ) # !!!!!!!deprecated
-
-                i += 1
-
 
 class OpenTelemetryCallbackHandler(BaseCallbackHandler):
     def __init__(self, tracer):
@@ -228,7 +198,6 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
             parent_run_id: Optional[UUID],
             span_name: str,
             kind: SpanKind = SpanKind.INTERNAL,
-            entity_name: str = "",
             metadata: Optional[dict[str, Any]] = None,
         ) -> Span:
             if metadata is not None:
@@ -258,7 +227,7 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
 
 
             self.span_mapping[run_id] = SpanHolder(
-                span, None, [], entity_name
+                span, None, []
             )
 
             if parent_run_id is not None and parent_run_id in self.span_mapping:
@@ -271,35 +240,20 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
         run_id: UUID,
         parent_run_id: Optional[UUID],
         name: str,
-        # kind: TraceloopSpanKindValues,
         kind: SpanKind,
-        workflow_name: str,
-        entity_name: str = "",
-        entity_path: str = "",
         metadata: Optional[dict[str, Any]] = None,
     ) -> Span:
-        span_name = f"{name}.{kind.value}"
+        # operation_type = kind.value if kind else "INTERNAL"
+        # span_name = f"{operation_type} {name}"
+    
+        # span_name = f"{name}.{kind.value}"
+        span_name = f"{name}.{kind}"
         span = self._create_span(
             run_id,
             parent_run_id,
             span_name,
-            workflow_name=workflow_name,
-            entity_name=entity_name,
-            entity_path=entity_path,
             metadata=metadata,
         )
-
-        # _set_span_attribute(span, SpanAttributes.TRACELOOP_SPAN_KIND, kind.value)
-        # _set_span_attribute(span, SpanAttributes.TRACELOOP_ENTITY_NAME, entity_name)
-        
-         # Replace Traceloop attributes with standard semantic conventions
-        _set_span_attribute(span, "app.workflow.name", workflow_name)
-        _set_span_attribute(span, "app.entity.name", entity_name)
-        
-        # Add span kind as an attribute (since we're using the SpanKind enum)
-        if kind == SpanKind.INTERNAL:
-            _set_span_attribute(span, "app.component.type", "workflow" if parent_run_id is None else "task")
-
         return span
         
         
@@ -310,14 +264,16 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
         name: str,
         operation_name: GenAIOperationValues,
         metadata: Optional[dict[str, Any]] = None,
-    ) -> Span:
+    ) -> Span:    
         span = self._create_span(
             run_id,
             parent_run_id,
-            f"{name}.{operation_name.value}",
+            # f"{name}.{operation_name.value}",
+            f"{operation_name.value} {name}",
             kind=SpanKind.CLIENT,
             metadata=metadata,
         )
+   
         _set_span_attribute(span, Span_Attributes.GEN_AI_SYSTEM, "Langchain")
         _set_span_attribute(span, Span_Attributes.GEN_AI_OPERATION_NAME, operation_name.value)
         
@@ -420,9 +376,6 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
                 or token_usage.get("generated_token_count")
                 or token_usage.get("output_tokens")
             )
-            total_tokens = token_usage.get("total_tokens") or (
-                prompt_tokens + completion_tokens
-            )
             
             _set_span_attribute(
                 span, Span_Attributes.GEN_AI_USAGE_INPUT_TOKENS, prompt_tokens
@@ -431,41 +384,10 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
             _set_span_attribute(
                 span, Span_Attributes.GEN_AI_USAGE_OUTPUT_TOKENS, completion_tokens
             )
-        
-            # Record token usage metrics
-            if prompt_tokens > 0:
-                self.token_histogram.record( # potentially can remove token_histogram
-                    prompt_tokens,
-                    attributes={
-                        Span_Attributes.GEN_AI_SYSTEM: "Langchain",
-                        Span_Attributes.GEN_AI_TOKEN_TYPE: "input",
-                        Span_Attributes.GEN_AI_RESPONSE_MODEL: model_name or "unknown",
-                    },
-                )
-
-            if completion_tokens > 0:
-                self.token_histogram.record( # potentially can remove token_histogram
-                    completion_tokens,
-                    attributes={
-                        Span_Attributes.GEN_AI_SYSTEM: "Langchain",
-                        Span_Attributes.GEN_AI_TOKEN_TYPE: "output",
-                        Span_Attributes.GEN_AI_RESPONSE_MODEL: model_name or "unknown",
-                    },
-                )
-
+        span.update_name(f"{model_name}") if model_name else span.update_name(span.name)
         _set_chat_response(span, response)
         self._end_span(span, run_id)
 
-        # Record duration
-        duration = time.time() - self.span_mapping[run_id].start_time
-        self.duration_histogram.record(
-            duration,
-            attributes={
-                Span_Attributes.GEN_AI_SYSTEM: "Langchain",
-                Span_Attributes.GEN_AI_RESPONSE_MODEL: model_name or "unknown",
-            },
-        )
-    
     @dont_throw
     def on_llm_error(self, error, *, run_id, parent_run_id, **kwargs):
         self._handle_error(error, run_id, parent_run_id, **kwargs)
@@ -475,42 +397,20 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
         if context_api.get_value(_SUPPRESS_INSTRUMENTATION_KEY):
             return
 
-        workflow_name = ""
-        entity_path = ""
-
         name = self._get_name_from_callback(serialized, **kwargs)
-        # kind = (
-        #     TraceloopSpanKindValues.WORKFLOW
-        #     if parent_run_id is None or parent_run_id not in self.spans
-        #     else TraceloopSpanKindValues.TASK
-        # )
-        
-        is_top_level = parent_run_id is None or parent_run_id not in self.span_mapping
-        
-        
         kind = SpanKind.INTERNAL
-
-        if is_top_level:
-            workflow_name = name
-        else:
-            workflow_name = self.get_workflow_name(parent_run_id)
-            entity_path = self.get_entity_path(parent_run_id)
 
         span = self._create_task_span(
             run_id,
             parent_run_id,
             name,
             kind,
-            workflow_name,
-            name,
-            entity_path,
             metadata,
         )
         should_trace = context_api.get_value("override_enable_content_tracing") or True
         if should_trace:
             _set_span_attribute(
                 span,
-                # SpanAttributes.TRACELOOP_ENTITY_INPUT,
                 "app.entity.input", # gpt generated alternative naming scheme
                 json.dumps(
                     {
@@ -534,7 +434,6 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
         if should_trace:
             _set_span_attribute(
                 span,
-                # SpanAttributes.TRACELOOP_ENTITY_OUTPUT,
                 "app.entity.output",
                 json.dumps(
                     {"outputs": outputs, "kwargs": kwargs},
@@ -543,13 +442,8 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
             )
 
         self._end_span(span, run_id)
-        if parent_run_id is None:
-            context_api.attach(
-                context_api.set_value(
-                    SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION_KEY, False # another instance of something we need to address
-                )
-            )
-    
+        _set_request_params(span, kwargs, self.span_mapping[run_id])
+
     @dont_throw
     def on_chain_error(self, error, run_id, parent_run_id, tags, **kwargs):
         self._handle_error(error, run_id, parent_run_id, **kwargs)
@@ -560,25 +454,19 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
             return
 
         name = self._get_name_from_callback(serialized, kwargs=kwargs)
-        workflow_name = self.get_workflow_name(parent_run_id)
-        entity_path = self.get_entity_path(parent_run_id)
 
         span = self._create_task_span(
             run_id,
             parent_run_id,
             name,
-            # TraceloopSpanKindValues.TOOL,
             SpanKind.INTERNAL,
-            workflow_name,
-            name,
-            entity_path,
         )
-        # if should_send_prompts():
+        
         should_trace = context_api.get_value("override_enable_content_tracing") or True
         if should_trace:
             _set_span_attribute(
                 span,
-                SpanAttributes.TRACELOOP_ENTITY_INPUT,
+                "app.entity.input",
                 json.dumps(
                     {
                         "input_str": input_str,
@@ -601,7 +489,6 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
         if should_trace:
             _set_span_attribute(
                 span,
-                # SpanAttributes.TRACELOOP_ENTITY_OUTPUT, # investigate this, do we even need it?
                 "app.entity.output",
                 json.dumps(
                     {"output": output, "kwargs": kwargs},
@@ -623,8 +510,6 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
 
     def on_agent_error(self, error, *, run_id, parent_run_id, **kwargs):
         self._handle_error(error, run_id, parent_run_id, **kwargs)
-    
-    
     
     
     def get_parent_span(self, parent_run_id: Optional[str] = None):
