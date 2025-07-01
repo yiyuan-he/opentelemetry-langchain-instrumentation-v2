@@ -43,6 +43,11 @@ def _set_request_params(span, kwargs, span_holder: SpanHolder):
             break
     else:
         model = "unknown"
+    
+    if span_holder.request_model != None:
+        model = span_holder.request_model
+    print(f"curr span holder: {span_holder}")
+    print(f"MODEL RIGHT HERE: {model}")
 
     _set_span_attribute(span, Span_Attributes.GEN_AI_REQUEST_MODEL, model)
     # response is not available for LLM requests (as opposed to chat)
@@ -93,15 +98,6 @@ def _set_span_attribute(span: Span, name: str, value: AttributeValue):
     if value is not None and value != "":
         span.set_attribute(name, value)
 
-
-def _set_llm_request(
-    span: Span,
-    serialized: dict[str, Any],
-    prompts: list[str],
-    kwargs: Any,
-    span_holder: SpanHolder,
-) -> None:
-    _set_request_params(span, kwargs, span_holder)
         
 def _set_chat_response(span: Span, response: LLMResult) -> None:
     input_tokens = 0
@@ -226,8 +222,12 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
                 span = self.tracer.start_span(span_name, kind=kind)
 
 
+            model_id = None
+            if "invocation_params" in metadata and "model_id" in metadata["invocation_params"]:
+                model_id = metadata["invocation_params"]["model_id"]
+
             self.span_mapping[run_id] = SpanHolder(
-                span, None, []
+                span, None, [], time.time, model_id
             )
 
             if parent_run_id is not None and parent_run_id in self.span_mapping:
@@ -273,7 +273,6 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
             kind=SpanKind.CLIENT,
             metadata=metadata,
         )
-   
         _set_span_attribute(span, Span_Attributes.GEN_AI_SYSTEM, "Langchain")
         _set_span_attribute(span, Span_Attributes.GEN_AI_OPERATION_NAME, operation_name.value)
         
@@ -329,17 +328,22 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
     
     
     @dont_throw
-    def on_llm_start(self, serialized, prompts, *, run_id, parent_run_id, **kwargs):
+    def on_llm_start(self, serialized, prompts, *, run_id, parent_run_id, **kwargs):        
         if context_api.get_value(_SUPPRESS_INSTRUMENTATION_KEY):
             return
 
+        model_id = None
+        if "invocation_params" in kwargs and "model_id" in kwargs["invocation_params"]:
+            model_id = kwargs["invocation_params"]["model_id"]
+            
         name = self._get_name_from_callback(serialized, kwargs=kwargs)
+        if model_id != None:
+            name = model_id
+            
         span = self._create_llm_span(
-            run_id, parent_run_id, name, GenAIOperationValues.TEXT_COMPLETION
+            run_id, parent_run_id, name, GenAIOperationValues.TEXT_COMPLETION, kwargs
         )
-        
-        _set_llm_request(span, serialized, prompts, kwargs, self.span_mapping[run_id])
-
+        _set_request_params(span, kwargs, self.span_mapping[run_id])
         
     @dont_throw
     def on_llm_end(self, response, *, run_id, parent_run_id, **kwargs):
@@ -350,6 +354,7 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
 
         model_name = None
         if response.llm_output is not None:
+            span.update_name(f"{model_name}") if model_name else span.update_name(span.name)
             model_name = response.llm_output.get(
                 "model_name"
             ) or response.llm_output.get("model_id")
@@ -377,16 +382,16 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
                 or token_usage.get("output_tokens")
             )
             
-            _set_span_attribute(
-                span, Span_Attributes.GEN_AI_USAGE_INPUT_TOKENS, prompt_tokens
-            )
+            # _set_span_attribute(
+            #     span, Span_Attributes.GEN_AI_USAGE_INPUT_TOKENS, prompt_tokens
+            # )
         
-            _set_span_attribute(
-                span, Span_Attributes.GEN_AI_USAGE_OUTPUT_TOKENS, completion_tokens
-            )
-        span.update_name(f"{model_name}") if model_name else span.update_name(span.name)
+            # _set_span_attribute(
+            #     span, Span_Attributes.GEN_AI_USAGE_OUTPUT_TOKENS, completion_tokens
+            # )
+        # span.update_name(f"{model_name}") if model_name else span.update_name(span.name)
         _set_chat_response(span, response)
-        self._end_span(span, run_id)
+        # self._end_span(span, run_id)
 
     @dont_throw
     def on_llm_error(self, error, *, run_id, parent_run_id, **kwargs):
@@ -422,7 +427,7 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
                     cls=CallbackFilteredJSONEncoder,
                 ),
             )
-
+        
     @dont_throw
     def on_chain_end(self, outputs, *, run_id, parent_run_id, **kwargs):   
         if context_api.get_value(_SUPPRESS_INSTRUMENTATION_KEY):
@@ -440,9 +445,10 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
                     cls=CallbackFilteredJSONEncoder,
                 ),
             )
-
-        self._end_span(span, run_id)
+        
+        # self._end_span(span, run_id)
         _set_request_params(span, kwargs, self.span_mapping[run_id])
+        self._end_span(span, run_id)
 
     @dont_throw
     def on_chain_error(self, error, run_id, parent_run_id, tags, **kwargs):
