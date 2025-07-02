@@ -534,7 +534,7 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
     def on_agent_finish(self, finish, run_id, parent_run_id, **kwargs):
         pass
 
-    def on_agent_error(self, error, *, run_id, parent_run_id, **kwargs):
+    def on_agent_error(self, error, run_id, parent_run_id, **kwargs):
         self._handle_error(error, run_id, parent_run_id, **kwargs)
     
     
