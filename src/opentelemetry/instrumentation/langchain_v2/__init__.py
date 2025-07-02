@@ -1,3 +1,4 @@
+from typing import Collection
 from opentelemetry.instrumentation.instrumentor import BaseInstrumentor
 from wrapt import wrap_function_wrapper
 
@@ -16,8 +17,8 @@ __all__ = ["OpenTelemetryCallbackHandler"]
 _instruments = ("langchain >= 0.1.0",)
 
 class LangChainInstrumentor(BaseInstrumentor):
-    @classmethod
-    def instrumentation_dependencies(cls) -> tuple:
+    
+    def instrumentation_dependencies(cls) -> Collection[str]:
         return _instruments
     
     def _instrument(self, **kwargs):

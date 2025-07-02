@@ -33,7 +33,6 @@ class Span_Attributes:
     GEN_AI_TOOL_NAME = "gen_ai.tool.name"
     GEN_AI_TOOL_DESCRIPTION = "gen_ai.tool.description"
     GEN_AI_TOOL_TYPE = "gen_ai.tool.type"
-    GEN_AI_TOKEN_TYPE = "gen_ai.token.type"
     
 # stability label for below is "development"
 class GenAIOperationValues(Enum):
