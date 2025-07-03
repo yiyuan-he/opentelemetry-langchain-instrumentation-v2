@@ -69,28 +69,7 @@ def _set_request_params(span, kwargs, span_holder: SpanHolder):
     )
     
     _set_span_attribute(span, Span_Attributes.GEN_AI_REQUEST_TOP_P, params.get("top_p"))
-
-    tools = kwargs.get("invocation_params", {}).get("tools", [])
-    for i, tool in enumerate(tools):
-        tool_function = tool.get("function", tool)
-        _set_span_attribute(
-            span,
-            f"{Span_Attributes.GEN_AI_TOOL_NAME}.{i}",
-            tool_function.get("name"),
-        )
-
-        _set_span_attribute(
-            span,
-            f"{Span_Attributes.GEN_AI_TOOL_DESCRIPTION}.{i}",
-            tool_function.get("description"),
-        )
-        
-        _set_span_attribute(
-            span,
-            f"{Span_Attributes.GEN_AI_TOOL_TYPE}.{i}",
-            json.dumps(tool_function.get("parameters", tool.get("input_schema"))),
-        )
-
+    
 
 def _set_span_attribute(span: Span, name: str, value: AttributeValue):
     if value is not None and value != "":
@@ -108,26 +87,26 @@ def _sanitize_metadata_value(value: Any) -> Any:
     return str(value)
 
 
-def _set_chat_request(
-    span: Span,
-    serialized: dict[str, Any],
-    messages: list[list[BaseMessage]],
-    kwargs: Any,
-    span_holder: SpanHolder,
-) -> None:
-    _set_request_params(span, kwargs, span_holder)
+# def _set_chat_request(
+#     span: Span,
+#     serialized: dict[str, Any],
+#     messages: list[list[BaseMessage]],
+#     kwargs: Any,
+#     span_holder: SpanHolder,
+# ) -> None:
+#     _set_request_params(span, kwargs, span_holder)
 
-    #  ////////////// Reflect: do we need this in chat callback? 
+#     #  ////////////// Reflect: do we need this in chat callback? 
     
-    # should_trace = context_api.get_value("override_enable_content_tracing") or True
-    # if should_trace:
+#     # should_trace = context_api.get_value("override_enable_content_tracing") or True
+#     # if should_trace:
         
-    #     for i, function in enumerate(
-    #         kwargs.get("invocation_params", {}).get("functions", [])
-    #     ):   
-    #         _set_span_attribute(span, f"{Span_Attributes.GEN_AI_TOOL_NAME}.{i}", function.get("name"))
-    #         _set_span_attribute(span, f"{Span_Attributes.GEN_AI_TOOL_DESCRIPTION}.{i}", function.get("description"))
-    #         _set_span_attribute(span, f"{Span_Attributes.GEN_AI_TOOL_TYPE}.{i}", json.dumps(function.get("parameters")))
+#     #     for i, function in enumerate(
+#     #         kwargs.get("invocation_params", {}).get("functions", [])
+#     #     ):   
+#     #         _set_span_attribute(span, f"{Span_Attributes.GEN_AI_TOOL_NAME}.{i}", function.get("name"))
+#     #         _set_span_attribute(span, f"{Span_Attributes.GEN_AI_TOOL_DESCRIPTION}.{i}", function.get("description"))
+#     #         _set_span_attribute(span, f"{Span_Attributes.GEN_AI_TOOL_TYPE}.{i}", json.dumps(function.get("parameters")))
 
 class OpenTelemetryCallbackHandler(BaseCallbackHandler):
     def __init__(self, tracer):
@@ -191,23 +170,6 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
                 self.span_mapping[parent_run_id].children.append(run_id)
 
             return span
-
-    def _create_task_span(
-        self,
-        run_id: UUID,
-        parent_run_id: Optional[UUID],
-        name: str,
-        kind: SpanKind,
-        metadata: Optional[dict[str, Any]] = None,
-    ) -> Span:
-        span_name = f"{name}.{kind}"
-        span = self._create_span(
-            run_id,
-            parent_run_id,
-            span_name,
-            metadata=metadata,
-        )
-        return span
         
         
     def _create_llm_span(
@@ -285,8 +247,9 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
         span = self._create_llm_span(
             run_id, parent_run_id, name, GenAIOperationValues.CHAT, metadata=metadata
         )
-        _set_chat_request(span, serialized, messages, kwargs, self.span_mapping[run_id])
-    
+     
+        _set_request_params(span, kwargs, self.span_mapping[run_id])
+
 
     @dont_throw
     def on_llm_start(self, 
@@ -299,6 +262,7 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
                      metadata: Optional[dict[str,Any]] | None = None,
                      **kwargs: Any
                      ):        
+  
         if context_api.get_value(_SUPPRESS_INSTRUMENTATION_KEY):
             return
 
@@ -313,6 +277,43 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
         span = self._create_llm_span(
             run_id, parent_run_id, name, GenAIOperationValues.TEXT_COMPLETION, kwargs
         )
+        
+        # Print serialized (with pretty formatting for readability)
+        print("\n" + "="*50)
+        print("SERIALIZED:")
+        import json
+        try:
+            print(json.dumps(serialized, indent=2, default=str))
+        except:
+            print("Could not JSON serialize. Raw representation:")
+            import pprint
+            pprint.pprint(serialized)
+        print("="*50)
+
+
+        # Print metadata
+        print("\nMETADATA:")
+        if metadata:
+            for key, value in metadata.items():
+                print(f"  {key}: {value}")
+        else:
+            print("  No metadata provided")
+        print("="*50)
+
+        # Print kwargs
+        print("\nKWARGS:")
+        if kwargs:
+            for key, value in kwargs.items():
+                if key == "model_kwargs" or "model" in key:
+                    print(f"  {key}:")
+                    for param_key, param_value in value.items():
+                        print(f"    {param_key}: {param_value}")
+                else:
+                    print(f"  {key}: {value}")
+        else:
+            print("  No additional kwargs provided")
+        print("="*50)
+
         _set_request_params(span, kwargs, self.span_mapping[run_id])
         
     @dont_throw
@@ -394,13 +395,21 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
         name = self._get_name_from_callback(serialized, **kwargs)
         kind = SpanKind.INTERNAL
 
-        span = self._create_task_span(
+        # span = self._create_task_span(
+        #     run_id,
+        #     parent_run_id,
+        #     name,
+        #     kind,
+        #     metadata,
+        # )
+        span_name = f"{name}.{kind}"
+        span = self._create_span(
             run_id,
             parent_run_id,
-            name,
-            kind,
-            metadata,
+            span_name,
+            metadata=metadata,
         )
+        
         _set_span_attribute(
             span,
             "chain.input",
@@ -468,12 +477,54 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
             return
 
         name = self._get_name_from_callback(serialized, kwargs=kwargs)
+        print("on tool start")
+        print("\n" + "="*50)
+        print("SERIALIZED:")
+        import json
+        try:
+            print(json.dumps(serialized, indent=2, default=str))
+        except:
+            print("Could not JSON serialize. Raw representation:")
+            import pprint
+            pprint.pprint(serialized)
+        print("="*50)
 
-        span = self._create_task_span(
+
+        # Print metadata
+        print("\nMETADATA:")
+        if metadata:
+            for key, value in metadata.items():
+                print(f"  {key}: {value}")
+        else:
+            print("  No metadata provided")
+        print("="*50)
+
+        # Print kwargs
+        print("\nKWARGS:")
+        if kwargs:
+            for key, value in kwargs.items():
+                if key == "model_kwargs" or "model" in key:
+                    print(f"  {key}:")
+                    for param_key, param_value in value.items():
+                        print(f"    {param_key}: {param_value}")
+                else:
+                    print(f"  {key}: {value}")
+        else:
+            print("  No additional kwargs provided")
+        print("="*50)
+        
+        # span = self._create_task_span(
+        #     run_id,
+        #     parent_run_id,
+        #     name,
+        #     SpanKind.INTERNAL,
+        # )
+        span_name = f"{name}.{SpanKind.INTERNAL}"
+        span = self._create_span(
             run_id,
             parent_run_id,
-            name,
-            SpanKind.INTERNAL,
+            span_name,
+            metadata=metadata,
         )
         
         # /////////// here we set tool id, name, type, and description if they exist
@@ -491,7 +542,14 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
                 },
                 cls=CallbackFilteredJSONEncoder,
             ),
-        )
+        ) ######### lowkey useless span attribute
+        
+        if serialized.get("description"):
+            _set_span_attribute(
+                span,
+                Span_Attributes.GEN_AI_TOOL_DESCRIPTION,
+                serialized.get("description"),
+            )
     
     @dont_throw
     def on_tool_end(self, 
@@ -513,8 +571,8 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
             json.dumps(
                 {"output": output, "kwargs": kwargs},
                 cls=CallbackFilteredJSONEncoder,
-            ),
-        )
+            ), 
+        ) ######## lowkey useless tool output
         self._end_span(span, run_id)
     
     @dont_throw
