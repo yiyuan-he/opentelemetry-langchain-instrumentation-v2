@@ -47,11 +47,9 @@ def _set_request_params(span, kwargs, span_holder: SpanHolder):
     if span_holder.request_model is None:
         model = None
 
-
     _set_span_attribute(span, Span_Attributes.GEN_AI_REQUEST_MODEL, model)
     _set_span_attribute(span, Span_Attributes.GEN_AI_RESPONSE_MODEL, model)
 
-    
     if "invocation_params" in kwargs:
         params = (
             kwargs["invocation_params"].get("params") or kwargs["invocation_params"]
@@ -71,7 +69,7 @@ def _set_request_params(span, kwargs, span_holder: SpanHolder):
     
     _set_span_attribute(span, Span_Attributes.GEN_AI_REQUEST_TOP_P, params.get("top_p"))
     
-
+        
 def _set_span_attribute(span: Span, name: str, value: AttributeValue):
     if value is not None and value != "":
         span.set_attribute(name, value)
@@ -256,42 +254,6 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
         span = self._create_llm_span(
             run_id, parent_run_id, name, GenAIOperationValues.TEXT_COMPLETION, kwargs
         )
-        
-        # Print serialized (with pretty formatting for readability)
-        print("\n" + "="*50)
-        # print("SERIALIZED:")
-        # import json
-        # try:
-        #     print(json.dumps(serialized, indent=2, default=str))
-        # except:
-        #     print("Could not JSON serialize. Raw representation:")
-        #     import pprint
-        #     pprint.pprint(serialized)
-        # print("="*50)
-
-
-        # Print metadata
-        print("\nMETADATA:")
-        if metadata:
-            for key, value in metadata.items():
-                print(f"  {key}: {value}")
-        else:
-            print("  No metadata provided")
-        print("="*50)
-
-        # Print kwargs
-        print("\nKWARGS:")
-        if kwargs:
-            for key, value in kwargs.items():
-                if key == "model_kwargs" or "model" in key:
-                    print(f"  {key}:")
-                    for param_key, param_value in value.items():
-                        print(f"    {param_key}: {param_value}")
-                else:
-                    print(f"  {key}: {value}")
-        else:
-            print("  No additional kwargs provided")
-        print("="*50)
 
         _set_request_params(span, kwargs, self.span_mapping[run_id])
         
@@ -449,43 +411,6 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
             return
 
         name = self._get_name_from_callback(serialized, kwargs=kwargs)
-        print("on tool start")
-        print("\n" + "="*50)
-        print("SERIALIZED:")
-        import json
-        try:
-            print(json.dumps(serialized, indent=2, default=str))
-        except:
-            print("Could not JSON serialize. Raw representation:")
-            import pprint
-            pprint.pprint(serialized)
-        print("="*50)
-
-
-        # # Print metadata
-        # print("\nMETADATA:")
-        # if metadata:
-        #     for key, value in metadata.items():
-        #         print(f"  {key}: {value}")
-        # else:
-        #     print("  No metadata provided")
-        # print("="*50)
-
-        # # Print kwargs
-        # print("\nKWARGS:")
-        # if kwargs:
-        #     for key, value in kwargs.items():
-        #         if key == "model_kwargs" or "model" in key:
-        #             print(f"  {key}:")
-        #             for param_key, param_value in value.items():
-        #                 print(f"    {param_key}: {param_value}")
-        #         else:
-        #             print(f"  {key}: {value}")
-        # else:
-        #     print("  No additional kwargs provided")
-        # print("="*50)
-        
-        print(f"HIT ON TOOL START FOR TOOL: {name}")
         span_name = f"{name}.{SpanKind.INTERNAL}"
         span = self._create_span(
             run_id,
