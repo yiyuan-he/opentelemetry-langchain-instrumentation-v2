@@ -259,15 +259,15 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
         
         # Print serialized (with pretty formatting for readability)
         print("\n" + "="*50)
-        print("SERIALIZED:")
-        import json
-        try:
-            print(json.dumps(serialized, indent=2, default=str))
-        except:
-            print("Could not JSON serialize. Raw representation:")
-            import pprint
-            pprint.pprint(serialized)
-        print("="*50)
+        # print("SERIALIZED:")
+        # import json
+        # try:
+        #     print(json.dumps(serialized, indent=2, default=str))
+        # except:
+        #     print("Could not JSON serialize. Raw representation:")
+        #     import pprint
+        #     pprint.pprint(serialized)
+        # print("="*50)
 
 
         # Print metadata
@@ -462,29 +462,30 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
         print("="*50)
 
 
-        # Print metadata
-        print("\nMETADATA:")
-        if metadata:
-            for key, value in metadata.items():
-                print(f"  {key}: {value}")
-        else:
-            print("  No metadata provided")
-        print("="*50)
+        # # Print metadata
+        # print("\nMETADATA:")
+        # if metadata:
+        #     for key, value in metadata.items():
+        #         print(f"  {key}: {value}")
+        # else:
+        #     print("  No metadata provided")
+        # print("="*50)
 
-        # Print kwargs
-        print("\nKWARGS:")
-        if kwargs:
-            for key, value in kwargs.items():
-                if key == "model_kwargs" or "model" in key:
-                    print(f"  {key}:")
-                    for param_key, param_value in value.items():
-                        print(f"    {param_key}: {param_value}")
-                else:
-                    print(f"  {key}: {value}")
-        else:
-            print("  No additional kwargs provided")
-        print("="*50)
+        # # Print kwargs
+        # print("\nKWARGS:")
+        # if kwargs:
+        #     for key, value in kwargs.items():
+        #         if key == "model_kwargs" or "model" in key:
+        #             print(f"  {key}:")
+        #             for param_key, param_value in value.items():
+        #                 print(f"    {param_key}: {param_value}")
+        #         else:
+        #             print(f"  {key}: {value}")
+        # else:
+        #     print("  No additional kwargs provided")
+        # print("="*50)
         
+        print(f"HIT ON TOOL START FOR TOOL: {name}")
         span_name = f"{name}.{SpanKind.INTERNAL}"
         span = self._create_span(
             run_id,
@@ -492,8 +493,6 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
             span_name,
             metadata=metadata,
         )
-        
-        # /////////// here we set tool id, name, type, and description if they exist
         
         _set_span_attribute(
             span,
@@ -510,12 +509,20 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
             ),
         ) ######### lowkey useless span attribute
         
+        if serialized.get("id"):
+            _set_span_attribute(
+                span,
+                Span_Attributes.GEN_AI_TOOL_CALL_ID,
+                serialized.get("id")
+            )
+            
         if serialized.get("description"):
             _set_span_attribute(
                 span,
                 Span_Attributes.GEN_AI_TOOL_DESCRIPTION,
                 serialized.get("description"),
             )
+            
         _set_span_attribute(
             span,
             Span_Attributes.GEN_AI_TOOL_NAME,
