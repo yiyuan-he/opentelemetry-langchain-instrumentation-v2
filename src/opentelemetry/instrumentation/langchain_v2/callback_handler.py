@@ -153,7 +153,7 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
 
             return span
         
-        asd
+    
     def _create_llm_span(
         self,
         run_id: UUID,
