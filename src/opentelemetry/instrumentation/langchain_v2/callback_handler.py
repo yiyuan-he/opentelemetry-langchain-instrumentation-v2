@@ -152,7 +152,7 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
                 self.span_mapping[parent_run_id].children.append(run_id)
 
             return span
-        
+        ads
     
     def _create_llm_span(
         self,
