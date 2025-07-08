@@ -136,7 +136,7 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
                 span = self.tracer.start_span(span_name, kind=kind)
 
 
-            model_id = None
+            model_id = "unknown"
             
             if "invocation_params" in metadata:
                 if "base_model_id" in metadata["invocation_params"]:
