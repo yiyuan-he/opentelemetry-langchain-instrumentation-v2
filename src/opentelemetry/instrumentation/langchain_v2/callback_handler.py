@@ -368,7 +368,6 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
         span = span_holder.span
         
         _set_span_attribute(span, "chain.output", str(outputs))
-        _set_request_params(span, kwargs, self.span_mapping[run_id])
         self._end_span(span, run_id)
 
     @dont_throw
