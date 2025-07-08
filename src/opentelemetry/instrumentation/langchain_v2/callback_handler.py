@@ -6,6 +6,8 @@ from langchain_core.callbacks import (
     BaseCallbackHandler,
 )
 
+from langchain_core.messages import BaseMessage
+from langchain_core.outputs import LLMResult
 from opentelemetry.context.context import Context
 from opentelemetry.trace import SpanKind, set_span_in_context
 from opentelemetry.trace.span import Span
@@ -14,14 +16,10 @@ from uuid import UUID
 
 from opentelemetry import context as context_api
 from opentelemetry.instrumentation.utils import _SUPPRESS_INSTRUMENTATION_KEY
-from opentelemetry.semconv_ai import (
-    SUPPRESS_LANGUAGE_MODEL_INSTRUMENTATION_KEY
-)
-
 
 from opentelemetry.instrumentation.langchain_v2.span_attributes import Span_Attributes, GenAIOperationValues
-from src.opentelemetry.instrumentation.langchain_v2.utils import dont_throw
-
+from opentelemetry.instrumentation.langchain_v2.utils import dont_throw
+from opentelemetry.trace.status import Status, StatusCode
 
 # below dataclass stolen from openLLMetry
 @dataclass
@@ -29,13 +27,12 @@ class SpanHolder:
     span: Span
     context: Context
     children: list[UUID]
-    entity_name: str 
     start_time: float = field(default_factory=time.time)
     request_model: Optional[str] = None
     
-    
 def _set_request_params(span, kwargs, span_holder: SpanHolder):
-    for model_tag in ("model", "model_id", "model_name"):
+        
+    for model_tag in ("model_id", "base_model_id"):
         if (model := kwargs.get(model_tag)) is not None:
             span_holder.request_model = model
             break
@@ -46,9 +43,11 @@ def _set_request_params(span, kwargs, span_holder: SpanHolder):
             break
     else:
         model = "unknown"
+    
+    if span_holder.request_model is None:
+        model = None
 
     _set_span_attribute(span, Span_Attributes.GEN_AI_REQUEST_MODEL, model)
-    # response is not available for LLM requests (as opposed to chat)
     _set_span_attribute(span, Span_Attributes.GEN_AI_RESPONSE_MODEL, model)
 
     if "invocation_params" in kwargs:
@@ -69,32 +68,11 @@ def _set_request_params(span, kwargs, span_holder: SpanHolder):
     )
     
     _set_span_attribute(span, Span_Attributes.GEN_AI_REQUEST_TOP_P, params.get("top_p"))
-
-    tools = kwargs.get("invocation_params", {}).get("tools", [])
-    for i, tool in enumerate(tools):
-        tool_function = tool.get("function", tool)
-        _set_span_attribute(
-            span,
-            f"{Span_Attributes.GEN_AI_TOOL_NAME}.{i}",
-            tool_function.get("name"),
-        )
-
-        _set_span_attribute(
-            span,
-            f"{Span_Attributes.GEN_AI_TOOL_DESCRIPTION}.{i}",
-            tool_function.get("description"),
-        )
-        
-        _set_span_attribute(
-            span,
-            f"{Span_Attributes.GEN_AI_TOOL_TYPE}.{i}",
-            json.dumps(tool_function.get("parameters", tool.get("input_schema"))),
-        )
-
-
+       
 def _set_span_attribute(span: Span, name: str, value: AttributeValue):
     if value is not None and value != "":
         span.set_attribute(name, value)
+
         
 def _sanitize_metadata_value(value: Any) -> Any:
     """Convert metadata values to OpenTelemetry-compatible types."""
@@ -128,7 +106,7 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
             parent_run_id: Optional[UUID],
             span_name: str,
             kind: SpanKind = SpanKind.INTERNAL,
-            entity_name: str = "",
+
             metadata: Optional[dict[str, Any]] = None,
         ) -> Span:
             if metadata is not None:
@@ -156,16 +134,22 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
             else:
                 span = self.tracer.start_span(span_name, kind=kind)
 
+            model_id = "unknown"
+            
+            if "invocation_params" in metadata:
+                if "base_model_id" in metadata["invocation_params"]:
+                    model_id = metadata["invocation_params"]["base_model_id"]
+                elif "model_id" in metadata["invocation_params"]:
+                    model_id = metadata["invocation_params"]["model_id"]
 
             self.span_mapping[run_id] = SpanHolder(
-                span, None, [], entity_name
+                span, None, [], time.time, model_id
             )
 
             if parent_run_id is not None and parent_run_id in self.span_mapping:
                 self.span_mapping[parent_run_id].children.append(run_id)
 
             return span
-
         
         
     def _create_llm_span(
@@ -175,11 +159,12 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
         name: str,
         operation_name: GenAIOperationValues,
         metadata: Optional[dict[str, Any]] = None,
-    ) -> Span:
+    ) -> Span:    
+
         span = self._create_span(
             run_id,
             parent_run_id,
-            f"{name}.{operation_name.value}",
+            f"{operation_name.value} {name}",
             kind=SpanKind.CLIENT,
             metadata=metadata,
         )
@@ -207,58 +192,274 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
             return serialized["id"][-1]
 
         return "unknown"
-                
-    def on_chat_model_start(self, serialized, messages, run_id, parent_run_id, **kwargs):
-        pass
     
+    def _handle_error(
+        self,
+        error: BaseException,
+        run_id: UUID,
+        parent_run_id: Optional[UUID] = None,
+        **kwargs: Any,
+    ) -> None:
+        """Common error handling logic for all components."""
+        if context_api.get_value(_SUPPRESS_INSTRUMENTATION_KEY):
+            return
+
+        span = self._get_span(run_id)
+        span.set_status(Status(StatusCode.ERROR))
+        span.record_exception(error)
+        self._end_span(span, run_id)
+
     
     @dont_throw
-    def on_llm_start(self, serialized, prompts, run_id, parent_run_id, **kwargs):
+    def on_chat_model_start(self, 
+                            serialized: dict[str, Any],
+                            messages: list[list[BaseMessage]],
+                            *, 
+                            run_id: UUID, 
+                            tags: Optional[list[str]] = None, 
+                            parent_run_id: Optional[UUID] = None, 
+                            metadata: Optional[dict[str, Any]] = None, 
+                            **kwargs: Any
+                            ):
+        if context_api.get_value(_SUPPRESS_INSTRUMENTATION_KEY):
+            return
+        
+        name = self._get_name_from_callback(serialized, kwargs=kwargs)
+        span = self._create_llm_span(
+            run_id, parent_run_id, name, GenAIOperationValues.CHAT, metadata=metadata
+        )
+     
+        _set_request_params(span, kwargs, self.span_mapping[run_id])
+
+
+    @dont_throw
+    def on_llm_start(self, 
+                     serialized: dict[str, Any], 
+                     prompts: list[str], 
+                     *, 
+                     run_id: UUID, 
+                     parent_run_id: UUID | None = None,
+                     tags: Optional[list[str]] | None = None,
+                     metadata: Optional[dict[str,Any]] | None = None,
+                     **kwargs: Any
+                     ):        
+  
+        if context_api.get_value(_SUPPRESS_INSTRUMENTATION_KEY):
+            return
+
+        model_id = None
+        if "invocation_params" in kwargs and "model_id" in kwargs["invocation_params"]:
+            model_id = kwargs["invocation_params"]["model_id"]
+            
+        name = self._get_name_from_callback(serialized, kwargs=kwargs)
+        if model_id != None:
+            name = model_id
+            
+        span = self._create_llm_span(
+            run_id, parent_run_id, name, GenAIOperationValues.TEXT_COMPLETION, kwargs
+        )
+
+        _set_request_params(span, kwargs, self.span_mapping[run_id])
+        
+    @dont_throw
+    def on_llm_end(self, 
+                   response: LLMResult, 
+                   *, 
+                   run_id: UUID, 
+                   parent_run_id: UUID | None = None, 
+                   tags: Optional[list[str]] | None = None,
+                   **kwargs: Any
+                   ):
+        if context_api.get_value(_SUPPRESS_INSTRUMENTATION_KEY):
+            return
+
+        span = self._get_span(run_id)
+
+        model_name = None
+        if response.llm_output is not None:
+            model_name = response.llm_output.get(
+                "model_name"
+            ) or response.llm_output.get("model_id")
+            if model_name is not None:
+                _set_span_attribute(span, Span_Attributes.GEN_AI_RESPONSE_MODEL, model_name)
+                _set_span_attribute(span, Span_Attributes.GEN_AI_REQUEST_MODEL, model_name)
+                
+            id = response.llm_output.get("id")
+            if id is not None and id != "":
+                _set_span_attribute(span, Span_Attributes.GEN_AI_RESPONSE_ID, id)
+
+        token_usage = (response.llm_output or {}).get("token_usage") or (
+            response.llm_output or {}
+        ).get("usage")
+        if token_usage is not None:
+            ############ fill in param values for all models supported by Langchain
+            prompt_tokens = (
+                token_usage.get("prompt_tokens")
+                or token_usage.get("input_token_count")
+                or token_usage.get("input_tokens")
+            )
+            completion_tokens = (
+                token_usage.get("completion_tokens")
+                or token_usage.get("generated_token_count")
+                or token_usage.get("output_tokens")
+            )
+            
+            _set_span_attribute(
+                span, Span_Attributes.GEN_AI_USAGE_INPUT_TOKENS, prompt_tokens
+            )
+        
+            _set_span_attribute(
+                span, Span_Attributes.GEN_AI_USAGE_OUTPUT_TOKENS, completion_tokens
+            )
+
+    @dont_throw
+    def on_llm_error(self, 
+                     error: BaseException, 
+                     *, 
+                     run_id: UUID, 
+                     parent_run_id: UUID | None = None, 
+                     tags: Optional[list[str]] | None = None,
+                     **kwargs: Any
+                     ):
+        self._handle_error(error, run_id, parent_run_id, **kwargs)
+
+    @dont_throw
+    def on_chain_start(self, 
+                       serialized: dict[str, Any], 
+                       inputs: dict[str, Any], 
+                       *, 
+                       run_id: UUID, 
+                       parent_run_id: UUID | None = None, 
+                       tags: Optional[list[str]] | None = None, 
+                       metadata: Optional[dict[str,Any]] | None = None, 
+                       **kwargs: Any
+                       ):
+        if context_api.get_value(_SUPPRESS_INSTRUMENTATION_KEY):
+            return
+
+        name = self._get_name_from_callback(serialized, **kwargs)
+        kind = SpanKind.INTERNAL
+
+        span_name = f"{name}.{kind}"
+        span = self._create_span(
+            run_id,
+            parent_run_id,
+            span_name,
+            metadata=metadata,
+        )        
+        _set_span_attribute(span, "chain.input", str(inputs))
+        
+    @dont_throw
+    def on_chain_end(self, 
+                     outputs: dict[str, Any], 
+                     *, 
+                     run_id: UUID, 
+                     parent_run_id: UUID | None = None, 
+                     tags: list[str] | None = None,
+                     **kwargs: Any
+                     ):   
+        if context_api.get_value(_SUPPRESS_INSTRUMENTATION_KEY):
+            return
+
+        span_holder = self.span_mapping[run_id]
+        span = span_holder.span
+        
+        _set_span_attribute(span, "chain.output", str(outputs))
+        _set_request_params(span, kwargs, self.span_mapping[run_id])
+        self._end_span(span, run_id)
+
+    @dont_throw
+    def on_chain_error(self, 
+                       error: BaseException, 
+                       run_id: UUID, 
+                       parent_run_id: UUID | None = None, 
+                       tags: Optional[list[str]] | None = None, 
+                       **kwargs: Any
+                       ):
+        self._handle_error(error, run_id, parent_run_id, **kwargs)
+        
+    @dont_throw
+    def on_tool_start(self, 
+                      serialized: dict[str, Any], 
+                      input_str: str, 
+                      *, 
+                      run_id: UUID, 
+                      parent_run_id: UUID | None = None, 
+                      tags: list[str] | None = None, 
+                      metadata: dict[str, Any] | None = None, 
+                      inputs: dict[str, Any] | None = None, 
+                      **kwargs: Any
+                      ):
         if context_api.get_value(_SUPPRESS_INSTRUMENTATION_KEY):
             return
 
         name = self._get_name_from_callback(serialized, kwargs=kwargs)
-        span = self._create_llm_span(
-            run_id, parent_run_id, name, GenAIOperationValues.TEXT_COMPLETION
+        span_name = f"{name}.{SpanKind.INTERNAL}"
+        span = self._create_span(
+            run_id,
+            parent_run_id,
+            span_name,
+            metadata=metadata,
         )
         
-        _set_request_params(span, kwargs, self.span_mapping[run_id])
-
+        _set_span_attribute(span, "tool.input", input_str)
         
-    def on_llm_end(self, response, run_id, parent_run_id, **kwargs):
-        pass
+        if serialized.get("id"):
+            _set_span_attribute(
+                span,
+                Span_Attributes.GEN_AI_TOOL_CALL_ID,
+                serialized.get("id")
+            )
+            
+        if serialized.get("description"):
+            _set_span_attribute(
+                span,
+                Span_Attributes.GEN_AI_TOOL_DESCRIPTION,
+                serialized.get("description"),
+            )
+            
+        _set_span_attribute(
+            span,
+            Span_Attributes.GEN_AI_TOOL_NAME,
+            name
+        )
     
-    def on_llm_error(self, error, run_id, parent_run_id, **kwargs):
-        pass
+    @dont_throw
+    def on_tool_end(self, 
+                    output: Any, 
+                    *, 
+                    run_id: UUID, 
+                    parent_run_id: UUID | None = None,
+                    tags: list[str] | None = None,
+                    **kwargs: Any
+                    ):
+        if context_api.get_value(_SUPPRESS_INSTRUMENTATION_KEY):
+            return
 
-    def on_chain_start(self, serialized, inputs, run_id, parent_run_id, **kwargs):
-        pass 
+        span = self._get_span(run_id)
+        
+        _set_span_attribute(span, "tool.output", str(output))
+        self._end_span(span, run_id)
     
-    def on_chain_end(self, outputs, run_id, parent_run_id, **kwargs):   
-        pass
+    @dont_throw
+    def on_tool_error(self,
+                      error: BaseException, 
+                      run_id: UUID, 
+                      parent_run_id: UUID| None = None, 
+                      tags: list[str] | None = None,
+                      **kwargs: Any,
+                      ):
+        self._handle_error(error, run_id, parent_run_id, **kwargs)
     
-    def on_chain_error(self, error, run_id, parent_run_id, tags, **kwargs):
-        pass
-    
-    def on_tool_start(self, serialized, input_str, run_id, parent_run_id, **kwargs):
-        pass
-    
-    def on_tool_end(self, output, run_id, parent_run_id, **kwargs):
-        pass
-    
-    def on_tool_error(self, error, run_id, parent_run_id, **kwargs):
-        pass
-    
-    def on_agent_action(self, action, run_id, parent_run_idone, **kwargs):
+        
+    def on_agent_action(self, action, run_id, parent_run_id, **kwargs):
         pass
     
     def on_agent_finish(self, finish, run_id, parent_run_id, **kwargs):
         pass
 
     def on_agent_error(self, error, run_id, parent_run_id, **kwargs):
-        pass
-    
-    
+        self._handle_error(error, run_id, parent_run_id, **kwargs)
     
     
     def get_parent_span(self, parent_run_id: Optional[str] = None):
