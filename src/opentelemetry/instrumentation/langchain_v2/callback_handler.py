@@ -17,7 +17,6 @@ from uuid import UUID
 from opentelemetry import context as context_api
 from opentelemetry.instrumentation.utils import _SUPPRESS_INSTRUMENTATION_KEY
 
-
 from opentelemetry.instrumentation.langchain_v2.span_attributes import Span_Attributes, GenAIOperationValues
 from opentelemetry.instrumentation.langchain_v2.utils import dont_throw
 from opentelemetry.trace.status import Status, StatusCode
@@ -69,8 +68,7 @@ def _set_request_params(span, kwargs, span_holder: SpanHolder):
     )
     
     _set_span_attribute(span, Span_Attributes.GEN_AI_REQUEST_TOP_P, params.get("top_p"))
-    
-        
+       
 def _set_span_attribute(span: Span, name: str, value: AttributeValue):
     if value is not None and value != "":
         span.set_attribute(name, value)
@@ -108,6 +106,7 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
             parent_run_id: Optional[UUID],
             span_name: str,
             kind: SpanKind = SpanKind.INTERNAL,
+
             metadata: Optional[dict[str, Any]] = None,
         ) -> Span:
             if metadata is not None:
@@ -135,7 +134,6 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
             else:
                 span = self.tracer.start_span(span_name, kind=kind)
 
-
             model_id = "unknown"
             
             if "invocation_params" in metadata:
@@ -162,6 +160,7 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
         operation_name: GenAIOperationValues,
         metadata: Optional[dict[str, Any]] = None,
     ) -> Span:    
+
         span = self._create_span(
             run_id,
             parent_run_id,
