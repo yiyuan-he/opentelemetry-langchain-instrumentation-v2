@@ -111,6 +111,8 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
 
             metadata: Optional[dict[str, Any]] = None,
         ) -> Span:
+            metadata = metadata or {}
+            
             if metadata is not None:
                 current_association_properties = (
                     context_api.get_value("association_properties") or {}
@@ -145,14 +147,13 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
                     model_id = metadata["invocation_params"]["model_id"]
 
             self.span_mapping[run_id] = SpanHolder(
-                span, None, [], time.time, model_id
+                span, None, [], time.time(), model_id
             )
 
             if parent_run_id is not None and parent_run_id in self.span_mapping:
                 self.span_mapping[parent_run_id].children.append(run_id)
 
             return span
-        ads
     
     def _create_llm_span(
         self,
