@@ -34,6 +34,8 @@ class SpanHolder:
 def _set_request_params(span, kwargs, span_holder: SpanHolder):
         
     for model_tag in ("model_id", "base_model_id"):
+        
+    for model_tag in ("model_id", "base_model_id"):
         if (model := kwargs.get(model_tag)) is not None:
             span_holder.request_model = model
             break
@@ -141,8 +143,11 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
                 _set_span_attribute(span, "root_span", True)
 
             model_id = None
-            if metadata is not None:
-                if "invocation_params" in metadata and "model_id" in metadata["invocation_params"]:
+            
+            if "invocation_params" in metadata:
+                if "base_model_id" in metadata["invocation_params"]:
+                    model_id = metadata["invocation_params"]["base_model_id"]
+                elif "model_id" in metadata["invocation_params"]:
                     model_id = metadata["invocation_params"]["model_id"]
 
             self.span_mapping[run_id] = SpanHolder(
@@ -296,7 +301,7 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
             ) or response.llm_output.get("model_id")
             if model_name is not None:
                 _set_span_attribute(span, Span_Attributes.GEN_AI_RESPONSE_MODEL, model_name)
-
+                _set_span_attribute(span, Span_Attributes.GEN_AI_REQUEST_MODEL, model_name)
                 
             id = response.llm_output.get("id")
             if id is not None and id != "":
@@ -306,6 +311,7 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
             response.llm_output or {}
         ).get("usage")
         if token_usage is not None:
+            ############ fill in param values for all models supported by Langchain
             prompt_tokens = (
                 token_usage.get("prompt_tokens")
                 or token_usage.get("input_token_count")
@@ -361,12 +367,9 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
             span_name,
             metadata=metadata,
         )        
+        _set_span_attribute(span, "chain.input", str(inputs))
         
-        if metadata["agent_name"]:
-            _set_span_attribute(span, Span_Attributes.GEN_AI_AGENT_NAME, metadata["agent_name"])
-        _set_span_attribute(span, "gen_ai.chain.input", str(inputs))
-        
-            
+    @dont_throw
     def on_chain_end(self, 
                      outputs: dict[str, Any], 
                      *, 
@@ -392,15 +395,7 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
         span_holder = self.span_mapping[run_id]
         span = span_holder.span
         
-        # _set_span_attribute(
-        #     span,
-        #     "chain.output",
-        #     json.dumps(
-        #         {"outputs": outputs, "kwargs": kwargs},
-        #         cls=CallbackFilteredJSONEncoder,
-        #     ),
-        # )
-        
+        _set_span_attribute(span, "chain.output", str(outputs))
         _set_request_params(span, kwargs, self.span_mapping[run_id])
         self._end_span(span, run_id)
 
@@ -438,7 +433,7 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
             metadata=metadata,
         )
         
-        _set_span_attribute(span, "gen_ai.tool.input", input_str)
+        _set_span_attribute(span, "tool.input", input_str)
         
         if serialized.get("id"):
             _set_span_attribute(
@@ -476,7 +471,7 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
 
         span = self._get_span(run_id)
         
-        _set_span_attribute(span, "gen_ai.tool.output", str(output))
+        _set_span_attribute(span, "tool.output", str(output))
         self._end_span(span, run_id)
     
     
