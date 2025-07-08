@@ -5,7 +5,7 @@ from typing import Any, Optional
 from langchain_core.callbacks import (
     BaseCallbackHandler,
 )
-as
+
 from langchain_core.messages import BaseMessage
 from langchain_core.outputs import LLMResult
 from opentelemetry.context.context import Context
