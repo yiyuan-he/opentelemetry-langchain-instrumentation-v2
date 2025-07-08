@@ -368,6 +368,7 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
         span = span_holder.span
         
         _set_span_attribute(span, "chain.output", str(outputs))
+        # do we find a way to propagate the LLM used?
         self._end_span(span, run_id)
 
     @dont_throw
