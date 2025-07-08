@@ -41,8 +41,11 @@ class LangChainInstrumentor(BaseInstrumentor):
     
     
 class _BaseCallbackManagerInitWrapper:
-    def __init__(self, callback_manager: "OpenTelemetryCallbackHandler"):
-        self._callback_manager = callback_manager
+    # def __init__(self, callback_manager: "OpenTelemetryCallbackHandler"):
+    #     self._callback_manager = callback_manager
+    
+    def __init__(self, callback_handler: "OpenTelemetryCallbackHandler"):
+        self.callback_handler = callback_handler
 
     def __call__(
         self,
@@ -51,9 +54,10 @@ class _BaseCallbackManagerInitWrapper:
         args,
         kwargs,
     ) -> None:
-        wrapped(*args, **kwargs)
+        wrapped(instance, args, kwargs)
+        # wrapped(*args, **kwargs)
         for handler in instance.inheritable_handlers:
-            if isinstance(handler, type(self._callback_manager)):
+            if isinstance(handler, type(self.callback_handler)):
                 break
         else:
-            instance.add_handler(self._callback_manager, True)
+            instance.add_handler(self.callback_handler, True)
