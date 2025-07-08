@@ -21,7 +21,7 @@ from langchain_core.agents import AgentAction, AgentFinish
 from langchain_core.agents import AgentAction, AgentFinish
 
 from opentelemetry.instrumentation.langchain_v2.span_attributes import Span_Attributes, GenAIOperationValues
-from opentelemetry.instrumentation.langchain_v2.utils import dont_throw, universal_debug_printer
+from opentelemetry.instrumentation.langchain_v2.utils import dont_throw
 from opentelemetry.trace.status import Status, StatusCode
 
 @dataclass
