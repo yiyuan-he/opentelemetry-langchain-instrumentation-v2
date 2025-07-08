@@ -231,7 +231,7 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
                             ):
         if context_api.get_value(_SUPPRESS_INSTRUMENTATION_KEY):
             return
-        
+        a
         model_id = None
         if "invocation_params" in kwargs and "model_id" in kwargs["invocation_params"]:
             model_id = kwargs["invocation_params"]["model_id"]
