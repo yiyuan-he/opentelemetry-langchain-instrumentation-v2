@@ -54,10 +54,17 @@ class _BaseCallbackManagerInitWrapper:
         args,
         kwargs,
     ) -> None:
-        wrapped(instance, args, kwargs)
-        # wrapped(*args, **kwargs)
+        # wrapped(instance, args, kwargs)
+        wrapped(*args, **kwargs)
         for handler in instance.inheritable_handlers:
-            if isinstance(handler, type(self.callback_handler)):
-                break
+            # if isinstance(handler, type(self.callback_handler)):
+            #     # break
+            #     return None
+            
+            if isinstance(handler, OpenTelemetryCallbackHandler):
+                return None
         else:
             instance.add_handler(self.callback_handler, True)
+            
+            
+        

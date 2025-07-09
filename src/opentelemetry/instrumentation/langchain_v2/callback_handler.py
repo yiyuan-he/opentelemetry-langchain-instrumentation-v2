@@ -27,7 +27,7 @@ from opentelemetry.trace.status import Status, StatusCode
 @dataclass
 class SpanHolder:
     span: Span
-    context: Context
+    # context: Context
     children: list[UUID]
     start_time: float = field(default_factory=time.time)
     request_model: Optional[str] = None
@@ -108,7 +108,6 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
             parent_run_id: Optional[UUID],
             span_name: str,
             kind: SpanKind = SpanKind.INTERNAL,
-
             metadata: Optional[dict[str, Any]] = None,
         ) -> Span:
             metadata = metadata or {}
@@ -147,7 +146,7 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
                     model_id = metadata["invocation_params"]["model_id"]
 
             self.span_mapping[run_id] = SpanHolder(
-                span, None, [], time.time(), model_id
+                span, [], time.time(), model_id
             )
 
             if parent_run_id is not None and parent_run_id in self.span_mapping:
