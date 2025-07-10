@@ -17,6 +17,8 @@ from uuid import UUID
 from opentelemetry import context as context_api
 from opentelemetry.instrumentation.utils import _SUPPRESS_INSTRUMENTATION_KEY
 
+from langchain_core.agents import AgentAction, AgentFinish
+
 from opentelemetry.instrumentation.langchain_v2.span_attributes import Span_Attributes, GenAIOperationValues
 from opentelemetry.instrumentation.langchain_v2.utils import dont_throw
 from opentelemetry.trace.status import Status, StatusCode
@@ -282,7 +284,7 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
             ) or response.llm_output.get("model_id")
             if model_name is not None:
                 _set_span_attribute(span, Span_Attributes.GEN_AI_RESPONSE_MODEL, model_name)
-                _set_span_attribute(span, Span_Attributes.GEN_AI_REQUEST_MODEL, model_name)
+
                 
             id = response.llm_output.get("id")
             if id is not None and id != "":
@@ -358,6 +360,7 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
                      tags: list[str] | None = None,
                      **kwargs: Any
                      ):   
+        
         if context_api.get_value(_SUPPRESS_INSTRUMENTATION_KEY):
             return
 
@@ -365,7 +368,9 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
         span = span_holder.span
         
         _set_span_attribute(span, "chain.output", str(outputs))
-        _set_request_params(span, kwargs, self.span_mapping[run_id])
+
+        # do we find a way to propagate the LLM used?
+
         self._end_span(span, run_id)
 
     @dont_throw
@@ -451,12 +456,38 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
                       ):
         self._handle_error(error, run_id, parent_run_id, **kwargs)
     
+    def on_agent_action(self,
+                    action: AgentAction,
+                    run_id: UUID,
+                    parent_run_id: UUID,
+                    **kwargs: Any
+                    ):
+        tool = getattr(action, "tool", None)
+        tool_input = getattr(action, "tool_input", None)
+        name = action.tool
+        span_name = f"{name}.{SpanKind.INTERNAL}"
+        span = self._create_span(
+            run_id,
+            parent_run_id,
+            span_name,
+        )
+        if run_id in self.span_mapping:
+            span = self.span_mapping[run_id].span
         
-    def on_agent_action(self, action, run_id, parent_run_id, **kwargs):
-        pass
+        _set_span_attribute(span, "agent.tool.input", tool_input)
+        _set_span_attribute(span, "agent.tool.name", tool)
+        
     
-    def on_agent_finish(self, finish, run_id, parent_run_id, **kwargs):
-        pass
+    def on_agent_finish(self, 
+                        finish: AgentFinish, 
+                        run_id: UUID, 
+                        parent_run_id: UUID, 
+                        **kwargs: Any
+                        ):
+        span = self.span_mapping[run_id].span
+        
+        _set_span_attribute(span, "agent.tool.output", finish.return_values['output'])
+
 
     def on_agent_error(self, error, run_id, parent_run_id, **kwargs):
         self._handle_error(error, run_id, parent_run_id, **kwargs)
