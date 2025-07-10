@@ -27,7 +27,6 @@ from opentelemetry.trace.status import Status, StatusCode
 @dataclass
 class SpanHolder:
     span: Span
-    # context: Context
     children: list[UUID]
     start_time: float = field(default_factory=time.time)
     request_model: Optional[str] = None
@@ -312,6 +311,9 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
             _set_span_attribute(
                 span, Span_Attributes.GEN_AI_USAGE_OUTPUT_TOKENS, completion_tokens
             )
+            
+        self._end_span(span, run_id)
+
 
     @dont_throw
     def on_llm_error(self, 
@@ -484,6 +486,9 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
         span = self.span_mapping[run_id].span
         
         _set_span_attribute(span, "agent.tool.output", finish.return_values['output'])
+        
+        # self._end_span(span, run_id)
+
 
 
     def on_agent_error(self, error, run_id, parent_run_id, **kwargs):
