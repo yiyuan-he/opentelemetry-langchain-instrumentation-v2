@@ -284,7 +284,6 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
             ) or response.llm_output.get("model_id")
             if model_name is not None:
                 _set_span_attribute(span, Span_Attributes.GEN_AI_RESPONSE_MODEL, model_name)
-                _set_span_attribute(span, Span_Attributes.GEN_AI_REQUEST_MODEL, model_name)
                 
             id = response.llm_output.get("id")
             if id is not None and id != "":
