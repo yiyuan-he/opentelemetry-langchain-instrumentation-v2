@@ -492,6 +492,13 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
                         parent_run_id: UUID, 
                         **kwargs: Any
                         ):
+        # print("ON AGENT FINISH")
+        # print(f"Agent finish return values: {finish.return_values}")
+        # print(f"Agent finish log: {finish.log}")
+        # print(f"Run ID: {run_id}")
+        # print(f"Parent Run ID: {parent_run_id}")
+        # print(f"Additional kwargs: {kwargs}")
+        
         span = self.span_mapping[run_id].span
         
         _set_span_attribute(span, "agent.tool.output", finish.return_values['output'])
