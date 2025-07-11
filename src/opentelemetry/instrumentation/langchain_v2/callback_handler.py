@@ -91,8 +91,10 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
         self.tracer = tracer
         self.span_mapping: dict[UUID, SpanHolder] = {}
     
+    
     def _get_span(self, run_id: UUID) -> Span:
         return self.span_mapping[run_id].span
+
 
     def _end_span(self, span: Span, run_id: UUID) -> None:
         for child_id in self.span_mapping[run_id].children:
@@ -101,6 +103,7 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
                 child_span.end()
         span.end()
         
+
     def _create_span(
             self,
             run_id: UUID,
@@ -135,6 +138,7 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
                 )
             else:
                 span = self.tracer.start_span(span_name, kind=kind)
+                _set_span_attribute(span, "root_span", True)
 
             model_id = "unknown"
             
@@ -153,6 +157,7 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
 
             return span
     
+
     def _create_llm_span(
         self,
         run_id: UUID,
@@ -194,6 +199,7 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
 
         return "unknown"
     
+
     def _handle_error(
         self,
         error: BaseException,
@@ -262,6 +268,7 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
 
         _set_request_params(span, kwargs, self.span_mapping[run_id])
         
+         
     @dont_throw
     def on_llm_end(self, 
                    response: LLMResult, 
@@ -312,8 +319,6 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
             _set_span_attribute(
                 span, Span_Attributes.GEN_AI_USAGE_OUTPUT_TOKENS, completion_tokens
             )
-            
-        self._end_span(span, run_id)
 
 
     @dont_throw
@@ -326,6 +331,7 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
                      **kwargs: Any
                      ):
         self._handle_error(error, run_id, parent_run_id, **kwargs)
+
 
     @dont_throw
     def on_chain_start(self, 
@@ -353,6 +359,10 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
         )        
         _set_span_attribute(span, "chain.input", str(inputs))
         
+        _set_span_attribute(
+            span, "chain_start", True
+        )
+        
     @dont_throw
     def on_chain_end(self, 
                      outputs: dict[str, Any], 
@@ -375,6 +385,7 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
 
         self._end_span(span, run_id)
 
+
     @dont_throw
     def on_chain_error(self, 
                        error: BaseException, 
@@ -384,6 +395,7 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
                        **kwargs: Any
                        ):
         self._handle_error(error, run_id, parent_run_id, **kwargs)
+        
         
     @dont_throw
     def on_tool_start(self, 
@@ -430,6 +442,7 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
             Span_Attributes.GEN_AI_TOOL_NAME,
             name
         )
+        
     
     @dont_throw
     def on_tool_end(self, 
@@ -448,6 +461,7 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
         _set_span_attribute(span, "tool.output", str(output))
         self._end_span(span, run_id)
     
+    
     @dont_throw
     def on_tool_error(self,
                       error: BaseException, 
@@ -458,6 +472,7 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
                       ):
         self._handle_error(error, run_id, parent_run_id, **kwargs)
     
+    
     def on_agent_action(self,
                     action: AgentAction,
                     run_id: UUID,
@@ -466,13 +481,7 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
                     ):
         tool = getattr(action, "tool", None)
         tool_input = getattr(action, "tool_input", None)
-        name = action.tool
-        span_name = f"{name}.{SpanKind.INTERNAL}"
-        span = self._create_span(
-            run_id,
-            parent_run_id,
-            span_name,
-        )
+
         if run_id in self.span_mapping:
             span = self.span_mapping[run_id].span
         
@@ -489,9 +498,6 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
         span = self.span_mapping[run_id].span
         
         _set_span_attribute(span, "agent.tool.output", finish.return_values['output'])
-        
-        # self._end_span(span, run_id)
-
 
 
     def on_agent_error(self, error, run_id, parent_run_id, **kwargs):
