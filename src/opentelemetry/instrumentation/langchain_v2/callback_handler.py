@@ -358,9 +358,6 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
         )        
         _set_span_attribute(span, "chain.input", str(inputs))
         
-        _set_span_attribute(
-            span, "chain_start", True
-        )
         
     @dont_throw
     def on_chain_end(self, 
