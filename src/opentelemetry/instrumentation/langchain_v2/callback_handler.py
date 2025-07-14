@@ -251,8 +251,8 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
                      **kwargs: Any
                      ):        
   
-        if context_api.get_value(_SUPPRESS_INSTRUMENTATION_KEY):
-            return
+        # if context_api.get_value(_SUPPRESS_INSTRUMENTATION_KEY):
+        #     return
 
         model_id = None
         if "invocation_params" in kwargs and "model_id" in kwargs["invocation_params"]:
@@ -357,7 +357,6 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
             metadata=metadata,
         )        
         _set_span_attribute(span, "chain.input", str(inputs))
-        
         
     @dont_throw
     def on_chain_end(self, 
@@ -489,12 +488,6 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
                         parent_run_id: UUID, 
                         **kwargs: Any
                         ):
-        # print("ON AGENT FINISH")
-        # print(f"Agent finish return values: {finish.return_values}")
-        # print(f"Agent finish log: {finish.log}")
-        # print(f"Run ID: {run_id}")
-        # print(f"Parent Run ID: {parent_run_id}")
-        # print(f"Additional kwargs: {kwargs}")
         
         span = self.span_mapping[run_id].span
         
@@ -503,9 +496,3 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
 
     def on_agent_error(self, error, run_id, parent_run_id, **kwargs):
         self._handle_error(error, run_id, parent_run_id, **kwargs)
-    
-    
-    def get_parent_span(self, parent_run_id: Optional[str] = None):
-        if parent_run_id is None:
-            return None
-        return self.span_mapping[parent_run_id]
