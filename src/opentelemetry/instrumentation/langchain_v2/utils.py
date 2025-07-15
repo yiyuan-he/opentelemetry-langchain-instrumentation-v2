@@ -49,7 +49,8 @@ def universal_debug_printer(**kwargs):
     print(f"Parent Run ID: {kwargs.get('parent_run_id', 'Unknown')}")
     
     # Handle serialized data (common to most callbacks)
-    serialized = kwargs.get('serialized')
+    # serialized = kwargs.get('serialized')
+    serialized = kwargs.get('serialized') or kwargs.get('outputs')
     if serialized:
         print("\n----- COMPONENT INFO -----")
         print(f"Name: {serialized.get('name', 'Unknown')}")
