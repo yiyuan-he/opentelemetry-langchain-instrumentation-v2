@@ -377,26 +377,6 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
             _set_span_attribute(span, Span_Attributes.GEN_AI_AGENT_NAME, metadata["agent_name"])
         _set_span_attribute(span, "gen_ai.chain.input", str(inputs))
         
-        
-        # lowercase_tags = [tag.lower() for tag in tags]
-        
-        # if any('chat' in tag for tag in lowercase_tags):
-        #     # LOGIC BLOCK FOR CHAT-RELATED TAGS
-        #     print("HIT CHAT MODEL HIT CHAT MODEL")
-        #     print(serialized)
-        #     print(run_id)
-        #     print(inputs)
-        #     print (tags)
-        #     _set_span_attribute(span, Span_Attributes.GEN_AI_OPERATION_NAME, "chat")
-        # else:
-        #     # LOGIC BLOCK FOR NON-CHAT TAGS
-        #     print("hit text completion")
-        #     print(serialized)
-        #     print(run_id)
-        #     print(inputs)
-        #     print (tags)
-            
-            # _set_span_attribute(span, Span_Attributes.GEN_AI_OPERATION_NAME, "text_completion")
             
             
     @dont_throw
