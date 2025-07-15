@@ -28,7 +28,7 @@ from opentelemetry.trace.status import Status, StatusCode
 class SpanHolder:
     span: Span
     children: list[UUID]
-    start_time: float = field(default_factory=time.time)
+    start_time: float = field(default_factory=time.time())
     request_model: Optional[str] = None
     
 def _set_request_params(span, kwargs, span_holder: SpanHolder):
@@ -174,7 +174,6 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
             kind=SpanKind.CLIENT,
             metadata=metadata,
         )
-        # _set_span_attribute(span, Span_Attributes.GEN_AI_SYSTEM, "Langchain")
         
         _set_span_attribute(span, Span_Attributes.GEN_AI_OPERATION_NAME, operation_name)
         
@@ -246,7 +245,7 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
         )
         _set_request_params(span, kwargs, self.span_mapping[run_id])
         _set_span_attribute(span, Span_Attributes.GEN_AI_SYSTEM, serialized.get("name")) # looks like serialized.get("name") provides the API provider (in our case bedrockLLM)
-
+        _set_span_attribute(span, Span_Attributes.GEN_AI_OPERATION_NAME, "chat")
 
     @dont_throw
     def on_llm_start(self, 
@@ -262,6 +261,8 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
   
         if context_api.get_value(_SUPPRESS_INSTRUMENTATION_KEY):
             return
+        
+        universal_debug_printer(**locals())
         
         model_id = None
         if "invocation_params" in kwargs and "model_id" in kwargs["invocation_params"]:
@@ -279,7 +280,8 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
         
         # looks like serialized.get("name") provides the API provider (in our case bedrockLLM)
         _set_span_attribute(span, Span_Attributes.GEN_AI_SYSTEM, serialized.get("name"))
-        
+
+        _set_span_attribute(span, Span_Attributes.GEN_AI_OPERATION_NAME, "text_completion")
          
     @dont_throw
     def on_llm_end(self, 
@@ -358,21 +360,45 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
         if context_api.get_value(_SUPPRESS_INSTRUMENTATION_KEY):
             return
         
-        # args_printer(serialized, inputs, run_id, parent_run_id, metadata, tags, kwargs)
-        universal_debug_printer(**locals())
-        
+            
         name = self._get_name_from_callback(serialized, **kwargs)
         kind = SpanKind.INTERNAL
 
-        span_name = f"{name}.{kind}"
+        # span_name = f"{name}.{kind}"
+        span_name = f"chain {name}"
         span = self._create_span(
             run_id,
             parent_run_id,
             span_name,
             metadata=metadata,
         )        
+        
+        if metadata["agent_name"]:
+            _set_span_attribute(span, Span_Attributes.GEN_AI_AGENT_NAME, metadata["agent_name"])
         _set_span_attribute(span, "gen_ai.chain.input", str(inputs))
         
+        
+        # lowercase_tags = [tag.lower() for tag in tags]
+        
+        # if any('chat' in tag for tag in lowercase_tags):
+        #     # LOGIC BLOCK FOR CHAT-RELATED TAGS
+        #     print("HIT CHAT MODEL HIT CHAT MODEL")
+        #     print(serialized)
+        #     print(run_id)
+        #     print(inputs)
+        #     print (tags)
+        #     _set_span_attribute(span, Span_Attributes.GEN_AI_OPERATION_NAME, "chat")
+        # else:
+        #     # LOGIC BLOCK FOR NON-CHAT TAGS
+        #     print("hit text completion")
+        #     print(serialized)
+        #     print(run_id)
+        #     print(inputs)
+        #     print (tags)
+            
+            # _set_span_attribute(span, Span_Attributes.GEN_AI_OPERATION_NAME, "text_completion")
+            
+            
     @dont_throw
     def on_chain_end(self, 
                      outputs: dict[str, Any], 
@@ -384,8 +410,8 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
                      ):   
     
         if context_api.get_value(_SUPPRESS_INSTRUMENTATION_KEY):
-            return
-
+            return       
+        
         span_holder = self.span_mapping[run_id]
         span = span_holder.span
         
@@ -419,9 +445,10 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
                       ):
         if context_api.get_value(_SUPPRESS_INSTRUMENTATION_KEY):
             return
-
+        
         name = self._get_name_from_callback(serialized, kwargs=kwargs)
-        span_name = f"{name}.{SpanKind.INTERNAL}"
+        # span_name = f"{name}.{SpanKind.INTERNAL}"
+        span_name = f"execute_tool {name}"
         span = self._create_span(
             run_id,
             parent_run_id,
@@ -451,6 +478,7 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
             name
         )
         
+        _set_span_attribute(span, Span_Attributes.GEN_AI_OPERATION_NAME, "execute_tool")
     
     @dont_throw
     def on_tool_end(self, 
@@ -487,6 +515,7 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
                     parent_run_id: UUID,
                     **kwargs: Any
                     ):
+    
         tool = getattr(action, "tool", None)
         tool_input = getattr(action, "tool_input", None)
 
@@ -495,6 +524,8 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
         
             _set_span_attribute(span, "gen_ai.agent.tool.input", tool_input)
             _set_span_attribute(span, "gen_ai.agent.tool.name", tool)
+            _set_span_attribute(span, Span_Attributes.GEN_AI_OPERATION_NAME, "create_agent")
+        
         
     
     def on_agent_finish(self, 
