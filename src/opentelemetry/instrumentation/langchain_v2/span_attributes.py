@@ -4,7 +4,6 @@ Semantic conventions for Gen AI agent spans following OpenTelemetry standards.
 This module defines constants for span attribute names as specified in:
 https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-agent-spans.md
 """
-from enum import Enum
 
 class Span_Attributes:
     GEN_AI_OPERATION_NAME = "gen_ai.operation.name"
@@ -32,33 +31,6 @@ class Span_Attributes:
     GEN_AI_TOOL_TYPE = "gen_ai.tool.type"
     
     
- # for gen_ai.system   
-class Gen_AI_System_Values:
-    ANTHROPIC = "anthropic"
-    AWS_BEDROCK = "aws.bedrock"
-    AZURE_AI_INFERENCE = "azure.ai.inference"
-    AZURE_AI_OPENAI = "azure.ai.openai"
-    COHERE = "cohere"	
-    GCP_GEMINI = "gcp.gemini"
-    GCP_GEN_AI = "gcp.gen_ai"
-    GCP_VERTEX_AI = "gcp.vertex_ai"
-    GROQ = "groq"
-    IBM_WATSONX_AI = "ibm.watsonx.ai"
-    MISTRAL_AI = "mistral_ai"
-    OPENAI = "openai"
-    PERPLEXITY = "perplexity"
-    XAI = "xai"
-    
-# stability label for below is "development"
-# class GenAIOperationValues(Enum):
-#     CHAT = "chat"
-#     CREATE_AGENT = "create_agent"
-#     EMBEDDINGS = "embeddings"
-#     GENERATE_CONTENT = "generate_content"
-#     INVOKE_AGENT = "invoke_agent"
-#     TEXT_COMPLETION = "text_completion"
-#     UNKNOWN = "unknown"
-
 class GenAIOperationValues:
     CHAT = "chat"
     CREATE_AGENT = "create_agent"
