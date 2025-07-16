@@ -1,3 +1,4 @@
+from typing import Collection
 from opentelemetry.instrumentation.instrumentor import BaseInstrumentor
 from wrapt import wrap_function_wrapper
 
@@ -16,6 +17,10 @@ __all__ = ["OpenTelemetryCallbackHandler"]
 _instruments = ("langchain >= 0.1.0",)
 
 class LangChainInstrumentor(BaseInstrumentor):
+    
+    def instrumentation_dependencies(cls) -> Collection[str]:
+        return _instruments
+    
     def _instrument(self, **kwargs):
         tracer_provider = kwargs.get("tracer_provider")
         tracer = get_tracer(__name__, __version__, tracer_provider)
@@ -36,8 +41,8 @@ class LangChainInstrumentor(BaseInstrumentor):
     
     
 class _BaseCallbackManagerInitWrapper:
-    def __init__(self, callback_manager: "OpenTelemetryCallbackHandler"):
-        self._callback_manager = callback_manager
+    def __init__(self, callback_handler: "OpenTelemetryCallbackHandler"):
+        self.callback_handler = callback_handler
 
     def __call__(
         self,
@@ -48,7 +53,10 @@ class _BaseCallbackManagerInitWrapper:
     ) -> None:
         wrapped(*args, **kwargs)
         for handler in instance.inheritable_handlers:
-            if isinstance(handler, type(self._callback_manager)):
-                break
+            if isinstance(handler, OpenTelemetryCallbackHandler):
+                return None
         else:
-            instance.add_handler(self._callback_manager, True)
+            instance.add_handler(self.callback_handler, True)
+            
+            
+        
