@@ -499,8 +499,7 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
         
             _set_span_attribute(span, "gen_ai.agent.tool.input", tool_input)
             _set_span_attribute(span, "gen_ai.agent.tool.name", tool)
-            _set_span_attribute(span, Span_Attributes.GEN_AI_OPERATION_NAME, "create_agent")
-            #invoke agent for when agent does an operation: then add invoke agent
+            _set_span_attribute(span, Span_Attributes.GEN_AI_OPERATION_NAME, "invoke_agent")
     
     def on_agent_finish(self, 
                         finish: AgentFinish, 
