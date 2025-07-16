@@ -1,13 +1,10 @@
 import unittest
-from unittest.mock import Mock, patch, MagicMock, call
+from unittest.mock import Mock, patch
 import uuid
-from typing import Collection
 from langchain_core.outputs import LLMResult, Generation
-from langchain_core.messages import HumanMessage
-from langchain_core.agents import AgentAction, AgentFinish
+
 from opentelemetry.trace import SpanKind, Status, StatusCode
 
-# Import your actual modules
 from opentelemetry.instrumentation.langchain_v2.callback_handler import (
     OpenTelemetryCallbackHandler,
     SpanHolder,
@@ -28,37 +25,29 @@ class TestOpenTelemetryHelperFunctions(unittest.TestCase):
     """Test the helper functions in the callback handler module."""
     
     def test_set_span_attribute(self):
-        # Create a mock span
         mock_span = Mock()
         
-        # Test with a valid value
         _set_span_attribute(mock_span, "test.attribute", "test_value")
         mock_span.set_attribute.assert_called_once_with("test.attribute", "test_value")
         
-        # Reset mock
         mock_span.reset_mock()
-        
-        # Test with a None value - should not call set_attribute
+
         _set_span_attribute(mock_span, "test.attribute", None)
         mock_span.set_attribute.assert_not_called()
-        
-        # Test with an empty string value - should not call set_attribute
+
         _set_span_attribute(mock_span, "test.attribute", "")
         mock_span.set_attribute.assert_not_called()
     
     def test_sanitize_metadata_value(self):
-        # Test primitive values
         self.assertEqual(_sanitize_metadata_value(None), None)
         self.assertEqual(_sanitize_metadata_value(True), True)
         self.assertEqual(_sanitize_metadata_value("string"), "string")
         self.assertEqual(_sanitize_metadata_value(123), 123)
         self.assertEqual(_sanitize_metadata_value(1.23), 1.23)
         
-        # Test list/tuple
         self.assertEqual(_sanitize_metadata_value([1, "two", 3.0]), ["1", "two", "3.0"])
         self.assertEqual(_sanitize_metadata_value((1, "two", 3.0)), ["1", "two", "3.0"])
         
-        # Test complex object
         class TestClass:
             def __str__(self):
                 return "test_class"
@@ -70,11 +59,9 @@ class TestOpenTelemetryHelperFunctions(unittest.TestCase):
         mock_span = Mock()
         mock_span_holder = Mock(spec=SpanHolder)
         
-        # Test with model_id in kwargs
         kwargs = {"model_id": "gpt-4", "temperature": 0.7, "max_tokens": 100, "top_p": 0.9}
         _set_request_params(mock_span, kwargs, mock_span_holder)
         
-        # Verify request_model was set and attributes were applied
         self.assertEqual(mock_span_holder.request_model, "gpt-4")
         mock_set_span_attribute.assert_any_call(mock_span, Span_Attributes.GEN_AI_REQUEST_MODEL, "gpt-4")
         mock_set_span_attribute.assert_any_call(mock_span, Span_Attributes.GEN_AI_RESPONSE_MODEL, "gpt-4")
@@ -82,11 +69,9 @@ class TestOpenTelemetryHelperFunctions(unittest.TestCase):
         mock_set_span_attribute.assert_any_call(mock_span, Span_Attributes.GEN_AI_REQUEST_MAX_TOKENS, 100)
         mock_set_span_attribute.assert_any_call(mock_span, Span_Attributes.GEN_AI_REQUEST_TOP_P, 0.9)
         
-        # Reset mock
         mock_set_span_attribute.reset_mock()
         mock_span_holder.reset_mock()
         
-        # Test with invocation_params containing model_id
         kwargs = {
             "invocation_params": {
                 "model_id": "gpt-3.5-turbo",
@@ -96,7 +81,6 @@ class TestOpenTelemetryHelperFunctions(unittest.TestCase):
         }
         _set_request_params(mock_span, kwargs, mock_span_holder)
         
-        # Verify request_model was set and attributes were applied
         self.assertEqual(mock_span_holder.request_model, "gpt-3.5-turbo")
         mock_set_span_attribute.assert_any_call(mock_span, Span_Attributes.GEN_AI_REQUEST_MODEL, "gpt-3.5-turbo")
 
@@ -121,12 +105,10 @@ class TestOpenTelemetryCallbackHandler(unittest.TestCase):
     @patch("opentelemetry.instrumentation.langchain_v2.callback_handler.context_api")
     def test_create_span(self, mock_context_api):
         """Test the _create_span method."""
-        # Setup
         mock_context_api.get_value.return_value = {}
         mock_context_api.set_value.return_value = {}
         mock_context_api.attach.return_value = None
         
-        # Create a span without a parent
         span = self.handler._create_span(
             run_id=self.run_id,
             parent_run_id=None,
@@ -135,15 +117,12 @@ class TestOpenTelemetryCallbackHandler(unittest.TestCase):
             metadata={"key": "value"}
         )
         
-        # Verify span creation
         self.mock_tracer.start_span.assert_called_once_with("test_span", kind=SpanKind.INTERNAL)
         self.assertEqual(span, self.mock_span)
         self.assertIn(self.run_id, self.handler.span_mapping)
         
-        # Reset mocks
         self.mock_tracer.reset_mock()
         
-        # Create a span with a parent
         parent_span = Mock()
         self.handler.span_mapping[self.parent_run_id] = SpanHolder(
             parent_span, [], time.time(), "model-id"
@@ -152,7 +131,6 @@ class TestOpenTelemetryCallbackHandler(unittest.TestCase):
     @patch("opentelemetry.instrumentation.langchain_v2.callback_handler.context_api")
     def test_on_llm_start_and_end(self, mock_context_api):
         """Test the on_llm_start and on_llm_end methods together."""
-        # Setup
         mock_context_api.get_value.return_value = False
         serialized = {"name": "test_llm"}
         prompts = ["Hello, world!"]
@@ -164,7 +142,6 @@ class TestOpenTelemetryCallbackHandler(unittest.TestCase):
             }
         }
         
-        # Mock required methods
         original_create_llm_span = self.handler._create_llm_span
         self.handler._create_llm_span = Mock(return_value=self.mock_span)
         
@@ -176,22 +153,18 @@ class TestOpenTelemetryCallbackHandler(unittest.TestCase):
             **kwargs
         )
         
-        # Verify _create_llm_span was called with the right parameters
         self.handler._create_llm_span.assert_called_once_with(
             self.run_id, 
             self.parent_run_id, 
-            "gpt-4",  # Should use the model_id from invocation_params
+            "gpt-4",  
             GenAIOperationValues.TEXT_COMPLETION,
             kwargs
         )
             
-        # Step 2: Set up and call on_llm_end
-        # We need to make sure the span exists in span_mapping
         self.handler.span_mapping[self.run_id] = SpanHolder(
             self.mock_span, [], time.time(), "gpt-4"
         )
         
-        # Create a LLMResult with token usage
         llm_output = {
             "token_usage": {
                 "prompt_tokens": 10,
@@ -202,60 +175,45 @@ class TestOpenTelemetryCallbackHandler(unittest.TestCase):
         }
         generations = [[Generation(text="This is a test response")]]
         response = LLMResult(generations=generations, llm_output=llm_output)
-        
-        # Mock _set_span_attribute to verify calls
+     
         with patch("opentelemetry.instrumentation.langchain_v2.callback_handler._set_span_attribute") as mock_set_attribute:
             with patch.object(self.handler, '_end_span') as mock_end_span:
-                # Call on_llm_end
                 self.handler.on_llm_end(
                     response=response,
                     run_id=self.run_id,
                     parent_run_id=self.parent_run_id
                 )
                 
-                # Print all calls for debugging
                 print("\nAll calls to mock_set_attribute:")
                 for i, call in enumerate(mock_set_attribute.call_args_list):
                     args, kwargs = call
                     print(f"Call {i+1}:", args, kwargs)
                     
-                # Verify span attributes were set correctly
                 mock_set_attribute.assert_any_call(self.mock_span, Span_Attributes.GEN_AI_RESPONSE_MODEL, "gpt-4")
-                # The following check will fail - we'll need to check implementation
-                # mock_set_attribute.assert_any_call(self.mock_span, Span_Attributes.GEN_AI_REQUEST_MODEL, "gpt-4")
                 mock_set_attribute.assert_any_call(self.mock_span, Span_Attributes.GEN_AI_RESPONSE_ID, "response-123")
                 mock_set_attribute.assert_any_call(self.mock_span, Span_Attributes.GEN_AI_USAGE_INPUT_TOKENS, 10)
                 mock_set_attribute.assert_any_call(self.mock_span, Span_Attributes.GEN_AI_USAGE_OUTPUT_TOKENS, 20)
                 
-                # Check if end_span was called
-                mock_end_span.assert_not_called()  # on_llm_end shouldn't call end_span
+                mock_end_span.assert_not_called()
         
-        # Restore original method
         self.handler._create_llm_span = original_create_llm_span
     
     @patch("opentelemetry.instrumentation.langchain_v2.callback_handler.context_api")
     def test_on_llm_error(self, mock_context_api):
         """Test the on_llm_error method."""
-        # Setup
         mock_context_api.get_value.return_value = False
         self.handler.span_mapping[self.run_id] = SpanHolder(
             self.mock_span, [], time.time(), "gpt-4"
         )
         error = ValueError("Test error")
         
-        # Call _handle_error directly since on_llm_error just delegates to it
         self.handler._handle_error(
             error=error,
             run_id=self.run_id,
             parent_run_id=self.parent_run_id
         )
-        
-        # Verify span status was set to ERROR and exception was recorded
-        # self.mock_span.set_status.assert_called_once_with(Status(StatusCode.ERROR))
 
-        # Instead of comparing objects directly, use an argument matcher
         self.mock_span.set_status.assert_called_once()
-        # Check that the call was with a Status object with ERROR code
         args, _ = self.mock_span.set_status.call_args
         self.assertEqual(args[0].status_code, StatusCode.ERROR)
 
@@ -266,12 +224,10 @@ class TestOpenTelemetryCallbackHandler(unittest.TestCase):
     @patch("opentelemetry.instrumentation.langchain_v2.callback_handler.context_api")
     def test_on_chain_start_end(self, mock_context_api):
         """Test the on_chain_start and on_chain_end methods."""
-        # Setup
         mock_context_api.get_value.return_value = False
         serialized = {"name": "test_chain"}
         inputs = {"query": "What is the capital of France?"}
         
-        # Test chain start
         with patch.object(self.handler, '_create_span', return_value=self.mock_span) as mock_create_span:
             self.handler.on_chain_start(
                 serialized=serialized,
@@ -280,11 +236,9 @@ class TestOpenTelemetryCallbackHandler(unittest.TestCase):
                 parent_run_id=self.parent_run_id
             )
             
-            # Verify span was created and input was set
             mock_create_span.assert_called_once()
             self.mock_span.set_attribute.assert_called_once_with("chain.input", str(inputs))
         
-        # Test chain end
         outputs = {"result": "Paris"}
         self.handler.span_mapping[self.run_id] = SpanHolder(
             self.mock_span, [], time.time(), "gpt-4"
@@ -296,15 +250,13 @@ class TestOpenTelemetryCallbackHandler(unittest.TestCase):
                 run_id=self.run_id,
                 parent_run_id=self.parent_run_id
             )
-            
-            # Verify output was set and span was ended
+
             self.mock_span.set_attribute.assert_called_with("chain.output", str(outputs))
             mock_end_span.assert_called_once_with(self.mock_span, self.run_id)
 
     @patch("opentelemetry.instrumentation.langchain_v2.callback_handler.context_api")
     def test_on_tool_start_end(self, mock_context_api):
         """Test the on_tool_start and on_tool_end methods."""
-        # Setup
         mock_context_api.get_value.return_value = False
         serialized = {
             "name": "test_tool", 
@@ -313,7 +265,6 @@ class TestOpenTelemetryCallbackHandler(unittest.TestCase):
         }
         input_str = "What is 2 + 2?"
         
-        # Test tool start
         with patch.object(self.handler, '_create_span', return_value=self.mock_span) as mock_create_span:
             with patch.object(self.handler, '_get_name_from_callback', return_value="test_tool") as mock_get_name:
                 self.handler.on_tool_start(
@@ -323,7 +274,6 @@ class TestOpenTelemetryCallbackHandler(unittest.TestCase):
                     parent_run_id=self.parent_run_id
                 )
                 
-                # Verify span was created
                 mock_create_span.assert_called_once()
                 mock_get_name.assert_called_once()
 
@@ -334,10 +284,8 @@ class TestOpenTelemetryCallbackHandler(unittest.TestCase):
                 self.mock_span.set_attribute.assert_any_call(Span_Attributes.GEN_AI_TOOL_NAME, "test_tool")
     
         
-        # Test tool end
         output = "The answer is 4"
         
-        # Store the span in the handler's mapping
         self.handler.span_mapping[self.run_id] = SpanHolder(
             self.mock_span, [], time.time(), "gpt-4"
         )
@@ -350,7 +298,6 @@ class TestOpenTelemetryCallbackHandler(unittest.TestCase):
                     parent_run_id=self.parent_run_id
                 )
                 
-                # Verify output was set and span was ended
                 mock_get_span.assert_called_once_with(self.run_id)
                 self.mock_span.set_attribute.assert_any_call("tool.output", str(output))
                 mock_end_span.assert_called_once_with(self.mock_span, self.run_id)
@@ -372,19 +319,15 @@ class TestLangChainInstrumentor(unittest.TestCase):
     @patch("opentelemetry.instrumentation.langchain_v2.wrap_function_wrapper")
     def test_instrument(self, mock_wrap, mock_get_tracer):
         """Test the _instrument method."""
-        # Setup
         mock_tracer = Mock()
         mock_get_tracer.return_value = mock_tracer
         tracer_provider = Mock()
         
-        # Execute _instrument
         self.instrumentor._instrument(tracer_provider=tracer_provider)
         
-        # Verify tracer was obtained and wrap_function_wrapper was called
         mock_get_tracer.assert_called_once()
         mock_wrap.assert_called_once()
         
-        # Verify the wrapper is a _BaseCallbackManagerInitWrapper
         module = mock_wrap.call_args[1]["module"]
         name = mock_wrap.call_args[1]["name"]
         wrapper = mock_wrap.call_args[1]["wrapper"]
@@ -397,17 +340,14 @@ class TestLangChainInstrumentor(unittest.TestCase):
     @patch("opentelemetry.instrumentation.langchain_v2.unwrap")
     def test_uninstrument(self, mock_unwrap):
         """Test the _uninstrument method."""
-        # Setup - add some wrapped methods to be unwrapped
         self.instrumentor._wrapped = [
             ("module1", "function1"),
             ("module2", "function2")
         ]
         self.instrumentor.handler = Mock()
         
-        # Execute _uninstrument
         self.instrumentor._uninstrument()
-        
-        # Verify unwrapping happened and handler was cleared
+
         mock_unwrap.assert_any_call("langchain_core.callbacks", "BaseCallbackManager.__init__")
         mock_unwrap.assert_any_call("module1", "function1")
         mock_unwrap.assert_any_call("module2", "function2")
@@ -419,54 +359,38 @@ class TestBaseCallbackManagerInitWrapper(unittest.TestCase):
     
     def test_init_wrapper_add_handler(self):
         """Test that the wrapper adds the handler to the callback manager."""
-        # Create a mock callback handler
         mock_handler = Mock(spec=OpenTelemetryCallbackHandler)
         
-        # Create the wrapper with our mock handler
         wrapper_instance = _BaseCallbackManagerInitWrapper(mock_handler)
         
-        # Create mocks for the original function and instance
         original_func = Mock()
         instance = Mock()
         instance.inheritable_handlers = []
         
-        # Call the wrapper
         wrapper_instance(original_func, instance, [], {})
         
-        # Verify the original function was called and handler was added
-        # original_func.assert_called_once_with(instance, [], {})
-        original_func.assert_called_once_with() ####### THIS TEST IS IRRELEVANT
+        original_func.assert_called_once_with() 
         instance.add_handler.assert_called_once_with(mock_handler, True)
     
     def test_init_wrapper_handler_already_exists(self):
         """Test that the wrapper doesn't add a duplicate handler."""
-        # Create a mock callback handler
         mock_handler = Mock(spec=OpenTelemetryCallbackHandler)
         
-        # Create the wrapper with our mock handler
         wrapper_instance = _BaseCallbackManagerInitWrapper(mock_handler)
         
-        # Create mocks for the original function and instance
         original_func = Mock()
         instance = Mock()
         
-        # Set up the instance to already have a handler of the same type
-        # existing_handler = Mock(spec=OpenTelemetryCallbackHandler)
-        # instance.inheritable_handlers = [existing_handler]
-        
         mock_tracer = Mock()
-        existing_handler = OpenTelemetryCallbackHandler(mock_tracer)  # Real handler with mock tracer
+        existing_handler = OpenTelemetryCallbackHandler(mock_tracer) 
         instance.inheritable_handlers = [existing_handler]
         
-        # Call the wrapper
         wrapper_instance(original_func, instance, [], {})
         
-        # Verify the original function was called and handler was not added
-        # original_func.assert_called_once_with(instance, [], {})
-        original_func.assert_called_once_with() ######## another dumb test
+        original_func.assert_called_once_with() 
         instance.add_handler.assert_not_called()
 
 
 if __name__ == "__main__":
-    import time  # Import needed for SpanHolder
+    import time 
     unittest.main()
