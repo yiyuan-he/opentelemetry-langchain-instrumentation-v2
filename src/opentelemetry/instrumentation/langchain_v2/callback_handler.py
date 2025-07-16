@@ -239,7 +239,6 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
         if model_id != None:
             name = model_id
             
-        # name = self._get_name_from_callback(serialized, kwargs=kwargs)
         span = self._create_llm_span(
             run_id, parent_run_id, name, GenAIOperationValues.CHAT, metadata=metadata
         )
@@ -261,8 +260,6 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
   
         if context_api.get_value(_SUPPRESS_INSTRUMENTATION_KEY):
             return
-        
-        universal_debug_printer(**locals())
         
         model_id = None
         if "invocation_params" in kwargs and "model_id" in kwargs["invocation_params"]:
@@ -364,7 +361,6 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
         name = self._get_name_from_callback(serialized, **kwargs)
         kind = SpanKind.INTERNAL
 
-        # span_name = f"{name}.{kind}"
         span_name = f"chain {name}"
         span = self._create_span(
             run_id,
@@ -427,7 +423,6 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
             return
         
         name = self._get_name_from_callback(serialized, kwargs=kwargs)
-        # span_name = f"{name}.{SpanKind.INTERNAL}"
         span_name = f"execute_tool {name}"
         span = self._create_span(
             run_id,
@@ -505,8 +500,7 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
             _set_span_attribute(span, "gen_ai.agent.tool.input", tool_input)
             _set_span_attribute(span, "gen_ai.agent.tool.name", tool)
             _set_span_attribute(span, Span_Attributes.GEN_AI_OPERATION_NAME, "create_agent")
-        
-        
+            #invoke agent for when agent does an operation: then add invoke agent
     
     def on_agent_finish(self, 
                         finish: AgentFinish, 
@@ -518,7 +512,6 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
         span = self.span_mapping[run_id].span
         
         _set_span_attribute(span, "gen_ai.agent.tool.output", finish.return_values['output'])
-
 
     def on_agent_error(self, error, run_id, parent_run_id, **kwargs):
         self._handle_error(error, run_id, parent_run_id, **kwargs)
