@@ -23,7 +23,6 @@ from opentelemetry.instrumentation.langchain_v2.span_attributes import Span_Attr
 from opentelemetry.instrumentation.langchain_v2.utils import dont_throw, universal_debug_printer
 from opentelemetry.trace.status import Status, StatusCode
 
-# below dataclass stolen from openLLMetry
 @dataclass
 class SpanHolder:
     span: Span
@@ -99,7 +98,7 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
     def _end_span(self, span: Span, run_id: UUID) -> None:
         for child_id in self.span_mapping[run_id].children:
             child_span = self.span_mapping[child_id].span
-            if child_span.end_time is None:  # avoid warning on ended spans
+            if child_span.end_time is None:
                 child_span.end()
         span.end()
         
@@ -217,7 +216,6 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
         self._end_span(span, run_id)
 
     
-    @dont_throw
     def on_chat_model_start(self, 
                             serialized: dict[str, Any],
                             messages: list[list[BaseMessage]],
@@ -243,10 +241,10 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
             run_id, parent_run_id, name, GenAIOperationValues.CHAT, metadata=metadata
         )
         _set_request_params(span, kwargs, self.span_mapping[run_id])
-        _set_span_attribute(span, Span_Attributes.GEN_AI_SYSTEM, serialized.get("name")) # looks like serialized.get("name") provides the API provider (in our case bedrockLLM)
+        _set_span_attribute(span, Span_Attributes.GEN_AI_SYSTEM, serialized.get("name"))
         _set_span_attribute(span, Span_Attributes.GEN_AI_OPERATION_NAME, "chat")
 
-    @dont_throw
+
     def on_llm_start(self, 
                      serialized: dict[str, Any], 
                      prompts: list[str], 
@@ -275,12 +273,11 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
 
         _set_request_params(span, kwargs, self.span_mapping[run_id])
         
-        # looks like serialized.get("name") provides the API provider (in our case bedrockLLM)
         _set_span_attribute(span, Span_Attributes.GEN_AI_SYSTEM, serialized.get("name"))
 
         _set_span_attribute(span, Span_Attributes.GEN_AI_OPERATION_NAME, "text_completion")
          
-    @dont_throw
+
     def on_llm_end(self, 
                    response: LLMResult, 
                    *, 
@@ -310,7 +307,6 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
             response.llm_output or {}
         ).get("usage")
         if token_usage is not None:
-            ############ fill in param values for all models supported by Langchain
             prompt_tokens = (
                 token_usage.get("prompt_tokens")
                 or token_usage.get("input_token_count")
@@ -331,7 +327,6 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
             )
 
 
-    @dont_throw
     def on_llm_error(self, 
                      error: BaseException, 
                      *, 
@@ -343,7 +338,6 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
         self._handle_error(error, run_id, parent_run_id, **kwargs)
 
 
-    @dont_throw
     def on_chain_start(self, 
                        serialized: dict[str, Any], 
                        inputs: dict[str, Any], 
@@ -374,8 +368,6 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
         _set_span_attribute(span, "gen_ai.chain.input", str(inputs))
         
             
-            
-    @dont_throw
     def on_chain_end(self, 
                      outputs: dict[str, Any], 
                      *, 
@@ -392,11 +384,9 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
         span = span_holder.span
         
         _set_span_attribute(span, "gen_ai.chain.output", str(outputs))
-        # do we find a way to propagate the LLM used?
         self._end_span(span, run_id)
 
 
-    @dont_throw
     def on_chain_error(self, 
                        error: BaseException, 
                        run_id: UUID, 
@@ -407,7 +397,6 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
         self._handle_error(error, run_id, parent_run_id, **kwargs)
         
         
-    @dont_throw
     def on_tool_start(self, 
                       serialized: dict[str, Any], 
                       input_str: str, 
@@ -455,7 +444,7 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
         
         _set_span_attribute(span, Span_Attributes.GEN_AI_OPERATION_NAME, "execute_tool")
     
-    @dont_throw
+
     def on_tool_end(self, 
                     output: Any, 
                     *, 
@@ -473,7 +462,6 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
         self._end_span(span, run_id)
     
     
-    @dont_throw
     def on_tool_error(self,
                       error: BaseException, 
                       run_id: UUID, 
