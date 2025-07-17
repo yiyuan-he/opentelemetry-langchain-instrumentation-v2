@@ -32,6 +32,7 @@ class LangChainInstrumentor(BaseInstrumentor):
             name="BaseCallbackManager.__init__",
             wrapper=_BaseCallbackManagerInitWrapper(otelCallbackHandler),
         )
+    
     def _uninstrument(self, **kwargs):
         unwrap("langchain_core.callbacks", "BaseCallbackManager.__init__")
         if hasattr(self, "_wrapped"):
@@ -39,11 +40,11 @@ class LangChainInstrumentor(BaseInstrumentor):
                 unwrap(module, name)
         self.handler = None
     
-    
 class _BaseCallbackManagerInitWrapper:
     def __init__(self, callback_handler: "OpenTelemetryCallbackHandler"):
         self.callback_handler = callback_handler
-
+        self._wrapped = []
+        
     def __call__(
         self,
         wrapped,
@@ -57,6 +58,3 @@ class _BaseCallbackManagerInitWrapper:
                 return None
         else:
             instance.add_handler(self.callback_handler, True)
-            
-            
-        
