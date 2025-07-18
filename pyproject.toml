@@ -1,6 +1,6 @@
 [project]
 name = "otel-aws-langchain-instrumentation-v2"
-version - "0.1.0"
+version = "0.1.0"
 description = "LangChain/LangGraph instrumentation library for OpenTelemetry"
 authors = [{name = "Eric", email = "ehrican@amazon.com"}, {name = "Michael", email = "yiyuanh@amazon.com"}, {name = "Eric", email = "zhaez@amazon.com"}]
 readme = "README.md"
@@ -8,9 +8,12 @@ license = {text = "MIT"}
 requires-python = ">=3.9"
 
 dependencies = [
-    *fill in*
+    "opentelemetry-api",
+    "opentelemetry-sdk",
+    "opentelemetry-instrumentation",
+    "langchain",
+    "langchain-core"
+    # Add any other dependencies your package needs
 ]
 
 [project.urls]
-
-[build-system]
