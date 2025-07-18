@@ -56,14 +56,7 @@ def _set_request_params(span, kwargs, span_holder: SpanHolder):
         )
     else:
         params = kwargs
-    
-    # print("PRINTIN PARAMS")
-    # for key, value in params.items():
-    #         if isinstance(value, (str, int, float, bool, type(None))):
-    #             print(f"{key}: {value}")
-    #         else:
-    #             print(f"{key}: {type(value)} (complex object)")
-    
+
     _set_span_attribute(
         span,
         Span_Attributes.GEN_AI_REQUEST_MAX_TOKENS,
@@ -118,6 +111,7 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
             kind: SpanKind = SpanKind.INTERNAL,
             metadata: Optional[dict[str, Any]] = None,
         ) -> Span:
+        
             metadata = metadata or {}
             
             if metadata is not None:
@@ -233,8 +227,6 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
                             **kwargs: Any
                             ):
         
-        # universal_debug_printer(**locals())
-        
         if context_api.get_value(_SUPPRESS_INSTRUMENTATION_KEY):
             return
         model_id = None
@@ -298,8 +290,6 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
         if context_api.get_value(_SUPPRESS_INSTRUMENTATION_KEY):
             return
 
-        # span = self._get_span(run_id)
-        
         span = None
         if run_id in self.span_mapping:
             span = self._get_span(run_id)
@@ -370,7 +360,6 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
         
             
         name = self._get_name_from_callback(serialized, **kwargs)
-        kind = SpanKind.INTERNAL
 
         span_name = f"chain {name}"
         span = self._create_span(
@@ -428,7 +417,6 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
         if context_api.get_value(_SUPPRESS_INSTRUMENTATION_KEY):
             return
         
-        universal_debug_printer(**locals())
         
         name = self._get_name_from_callback(serialized, kwargs=kwargs)
         span_name = f"execute_tool {name}"
