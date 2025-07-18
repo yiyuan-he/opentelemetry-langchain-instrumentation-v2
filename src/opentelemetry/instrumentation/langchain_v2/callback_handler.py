@@ -20,7 +20,7 @@ from opentelemetry.instrumentation.utils import _SUPPRESS_INSTRUMENTATION_KEY
 from langchain_core.agents import AgentAction, AgentFinish
 
 from opentelemetry.instrumentation.langchain_v2.span_attributes import Span_Attributes, GenAIOperationValues
-# from opentelemetry.instrumentation.langchain_v2.utils import dont_throw
+from opentelemetry.instrumentation.langchain_v2.utils import dont_throw
 from opentelemetry.trace.status import Status, StatusCode
 
 
@@ -32,8 +32,6 @@ class SpanHolder:
     request_model: Optional[str] = None
     
 def _set_request_params(span, kwargs, span_holder: SpanHolder):
-        
-    for model_tag in ("model_id", "base_model_id"):
         
     for model_tag in ("model_id", "base_model_id"):
         if (model := kwargs.get(model_tag)) is not None:
@@ -231,7 +229,7 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
                             ):
         if context_api.get_value(_SUPPRESS_INSTRUMENTATION_KEY):
             return
-        a
+        
         model_id = None
         if "invocation_params" in kwargs and "model_id" in kwargs["invocation_params"]:
             model_id = kwargs["invocation_params"]["model_id"]
