@@ -20,7 +20,7 @@ from opentelemetry.instrumentation.utils import _SUPPRESS_INSTRUMENTATION_KEY
 from langchain_core.agents import AgentAction, AgentFinish
 
 from opentelemetry.instrumentation.langchain_v2.span_attributes import Span_Attributes, GenAIOperationValues
-from opentelemetry.instrumentation.langchain_v2.utils import dont_throw, universal_debug_printer
+# from opentelemetry.instrumentation.langchain_v2.utils import dont_throw, universal_debug_printer
 from opentelemetry.trace.status import Status, StatusCode
 
 @dataclass
@@ -66,8 +66,9 @@ def _set_request_params(span, kwargs, span_holder: SpanHolder):
     _set_span_attribute(
         span, Span_Attributes.GEN_AI_REQUEST_TEMPERATURE, params.get("temperature")
     )
-    
+
     _set_span_attribute(span, Span_Attributes.GEN_AI_REQUEST_TOP_P, params.get("top_p"))
+
        
 def _set_span_attribute(span: Span, name: str, value: AttributeValue):
     if value is not None and value != "":
@@ -89,10 +90,6 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
         super().__init__()
         self.tracer = tracer
         self.span_mapping: dict[UUID, SpanHolder] = {}
-    
-    
-    def _get_span(self, run_id: UUID) -> Span:
-        return self.span_mapping[run_id].span
 
 
     def _end_span(self, span: Span, run_id: UUID) -> None:
@@ -210,7 +207,7 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
         if context_api.get_value(_SUPPRESS_INSTRUMENTATION_KEY):
             return
 
-        span = self._get_span(run_id)
+        span = self.span_mapping[run_id].span
         span.set_status(Status(StatusCode.ERROR))
         span.record_exception(error)
         self._end_span(span, run_id)
@@ -292,7 +289,7 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
 
         span = None
         if run_id in self.span_mapping:
-            span = self._get_span(run_id)
+            span = self.span_mapping[run_id].span
         else:
             return
 
@@ -371,7 +368,8 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
         
         if "agent_name" in metadata:
             _set_span_attribute(span, Span_Attributes.GEN_AI_AGENT_NAME, metadata["agent_name"])
-        _set_span_attribute(span, "gen_ai.chain.input", str(inputs))
+        # _set_span_attribute(span, "gen_ai.chain.input", str(inputs))
+        _set_span_attribute(span, "gen_ai.prompt", str(inputs))
         
             
     def on_chain_end(self, 
@@ -389,7 +387,8 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
         span_holder = self.span_mapping[run_id]
         span = span_holder.span
         
-        _set_span_attribute(span, "gen_ai.chain.output", str(outputs))
+        # _set_span_attribute(span, "gen_ai.chain.output", str(outputs))
+        _set_span_attribute(span, "gen_ai.completion", str(outputs))
         self._end_span(span, run_id)
 
 
@@ -463,7 +462,7 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
         if context_api.get_value(_SUPPRESS_INSTRUMENTATION_KEY):
             return
 
-        span = self._get_span(run_id)
+        span = self.span_mapping[run_id].span
         
         _set_span_attribute(span, "gen_ai.tool.output", str(output))
         self._end_span(span, run_id)
@@ -492,6 +491,7 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
             span = self.span_mapping[run_id].span
         
             _set_span_attribute(span, "gen_ai.agent.tool.input", tool_input)
+            # _set_span_attribute(span, "gen_ai.prompt", tool_input)
             _set_span_attribute(span, "gen_ai.agent.tool.name", tool)
             _set_span_attribute(span, Span_Attributes.GEN_AI_OPERATION_NAME, "invoke_agent")
     
@@ -505,6 +505,7 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
         span = self.span_mapping[run_id].span
         
         _set_span_attribute(span, "gen_ai.agent.tool.output", finish.return_values['output'])
+        # _set_span_attribute(span, "gen_ai.completion", finish.return_values['output'])
 
     def on_agent_error(self, error, run_id, parent_run_id, **kwargs):
         self._handle_error(error, run_id, parent_run_id, **kwargs)
