@@ -20,7 +20,6 @@ from opentelemetry.instrumentation.utils import _SUPPRESS_INSTRUMENTATION_KEY
 from langchain_core.agents import AgentAction, AgentFinish
 
 from opentelemetry.instrumentation.langchain_v2.span_attributes import Span_Attributes, GenAIOperationValues
-# from opentelemetry.instrumentation.langchain_v2.utils import dont_throw, universal_debug_printer
 from opentelemetry.trace.status import Status, StatusCode
 
 @dataclass
@@ -154,27 +153,6 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
 
             return span
     
-
-    def _create_llm_span(
-        self,
-        run_id: UUID,
-        parent_run_id: Optional[UUID],
-        name: str,
-        operation_name: GenAIOperationValues,
-        metadata: Optional[dict[str, Any]] = None,
-    ) -> Span:    
-
-        span = self._create_span(
-            run_id,
-            parent_run_id,
-            f"{operation_name} {name}",
-            kind=SpanKind.CLIENT,
-            metadata=metadata,
-        )
-        _set_span_attribute(span, Span_Attributes.GEN_AI_OPERATION_NAME, operation_name)
-        
-        return span
-    
     
     @staticmethod
     def _get_name_from_callback(
@@ -233,10 +211,17 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
         name = self._get_name_from_callback(serialized, kwargs=kwargs)
         if model_id != None:
             name = model_id
-            
-        span = self._create_llm_span(
-            run_id, parent_run_id, name, GenAIOperationValues.CHAT, metadata=metadata
+        
+        span = self._create_span(
+            run_id,
+            parent_run_id,
+            f"{GenAIOperationValues.CHAT} {name}",
+            kind=SpanKind.CLIENT,
+            metadata=metadata,
         )
+        _set_span_attribute(span, Span_Attributes.GEN_AI_OPERATION_NAME, GenAIOperationValues.CHAT)
+        
+        
         if "kwargs" in serialized:
             _set_request_params(span, serialized["kwargs"], self.span_mapping[run_id])
         if "name" in serialized:
@@ -264,10 +249,15 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
         name = self._get_name_from_callback(serialized, kwargs=kwargs)
         if model_id != None:
             name = model_id
-            
-        span = self._create_llm_span(
-            run_id, parent_run_id, name, GenAIOperationValues.TEXT_COMPLETION, kwargs
+        
+        span = self._create_span(
+            run_id,
+            parent_run_id,
+            f"{GenAIOperationValues.CHAT} {name}",
+            kind=SpanKind.CLIENT,
+            metadata=metadata,
         )
+        _set_span_attribute(span, Span_Attributes.GEN_AI_OPERATION_NAME, GenAIOperationValues.CHAT)
 
         _set_request_params(span, kwargs, self.span_mapping[run_id])
         
