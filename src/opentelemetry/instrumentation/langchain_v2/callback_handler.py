@@ -156,6 +156,8 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
         **kwargs: Any,
     ) -> str:
         """Get the name to be used for the span. Based on heuristic. Can be extended."""
+        if "invocation_params" in kwargs and "model_id" in kwargs["invocation_params"]:
+            return  kwargs["invocation_params"]["model_id"]
         if serialized and "kwargs" in serialized and serialized["kwargs"].get("name"):
             return serialized["kwargs"]["name"]
         if kwargs.get("name"):
@@ -164,8 +166,6 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
             return serialized["name"]
         if "id" in serialized:
             return serialized["id"][-1]
-        if "invocation_params" in kwargs and "model_id" in kwargs["invocation_params"]:
-            return  kwargs["invocation_params"]["model_id"]
 
         return "unknown"
 
@@ -201,8 +201,7 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
         if context_api.get_value(_SUPPRESS_INSTRUMENTATION_KEY):
             return
 
-        name = self._get_name_from_callback(serialized, kwargs=kwargs)
-
+        name = self._get_name_from_callback(serialized, **kwargs)
         span = self._create_span(
             run_id,
             parent_run_id,
