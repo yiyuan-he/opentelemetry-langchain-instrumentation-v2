@@ -5,7 +5,7 @@ This module defines constants for span attribute names as specified in:
 https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-agent-spans.md
 """
 
-class Span_Attributes:
+class SpanAttributes:
     GEN_AI_OPERATION_NAME = "gen_ai.operation.name"
     GEN_AI_SYSTEM = "gen_ai.system"
     GEN_AI_ERROR_TYPE = "error.type"
@@ -16,6 +16,7 @@ class Span_Attributes:
     GEN_AI_SERVER_PORT = "server.port"
     GEN_AI_REQUEST_FREQUENCY_PENALTY = "gen_ai.request.frequency_penalty"
     GEN_AI_REQUEST_MAX_TOKENS = "gen_ai.request.max_tokens"
+    GEN_AI_REQUEST_STOP_SEQUENCES = "gen_ai.request.stop_sequences"
     GEN_AI_REQUEST_PRESENCE_PENALTY = "gen_ai.request.presence_penalty"
     GEN_AI_REQUEST_TEMPERATURE = "gen_ai.request.temperature"
     GEN_AI_REQUEST_TOP_P = "gen_ai.request.top_p"
@@ -29,8 +30,8 @@ class Span_Attributes:
     GEN_AI_TOOL_NAME = "gen_ai.tool.name"
     GEN_AI_TOOL_DESCRIPTION = "gen_ai.tool.description"
     GEN_AI_TOOL_TYPE = "gen_ai.tool.type"
-    
-    
+
+
 class GenAIOperationValues:
     CHAT = "chat"
     CREATE_AGENT = "create_agent"
