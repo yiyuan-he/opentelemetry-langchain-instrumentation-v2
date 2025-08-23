@@ -40,3 +40,4 @@ class GenAIOperationValues:
     INVOKE_AGENT = "invoke_agent"
     TEXT_COMPLETION = "text_completion"
     UNKNOWN = "unknown"
+    EXECUTE_TOOL = "execute_tool"

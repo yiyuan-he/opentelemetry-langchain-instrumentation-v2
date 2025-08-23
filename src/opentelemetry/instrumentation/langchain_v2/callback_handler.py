@@ -423,7 +423,7 @@ class OpenTelemetryCallbackHandler(BaseCallbackHandler):
             name
         )
 
-        _set_span_attribute(span, SpanAttributes.GEN_AI_OPERATION_NAME, "execute_tool")
+        _set_span_attribute(span, SpanAttributes.GEN_AI_OPERATION_NAME, GenAIOperationValues.EXECUTE_TOOL)
 
 
     def on_tool_end(self,
